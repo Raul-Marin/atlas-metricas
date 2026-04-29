@@ -19,7 +19,7 @@ import {
   type VizCategory,
 } from "@/lib/quadrant-viz";
 import { cn } from "@/lib/utils";
-import { Minus, Plus, RotateCcw } from "lucide-react";
+import { Info, Minus, Plus, RotateCcw } from "lucide-react";
 
 /** Tamaño lógico del canvas (px); el mapa ocupa todo el rectángulo y puedes desplazarte fuera. */
 const CANVAS_WORLD_W = 5600;
@@ -102,6 +102,31 @@ function VizShape({
   }
 }
 
+type HintKey = "zoom" | "pan" | "card";
+type HintStatus = "pending" | "hit" | "fading" | "gone";
+
+function HintItem({
+  status,
+  children,
+}: {
+  status: HintStatus;
+  children: React.ReactNode;
+}) {
+  if (status === "gone") return null;
+  return (
+    <span
+      className={cn(
+        "transition-opacity duration-500",
+        status === "pending" && "text-[#757575] opacity-100",
+        status === "hit" && "text-emerald-600 opacity-100",
+        status === "fading" && "text-emerald-600 opacity-0",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 function shapeFor(cat: VizCategory) {
   const row = VIZ_LEGEND.find((l) => l.key === cat);
   if (!row) return null;
@@ -109,8 +134,35 @@ function shapeFor(cat: VizCategory) {
 }
 
 function LegendFloat() {
+  const [open, setOpen] = React.useState(true);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Mostrar leyenda de tipos"
+        className="absolute left-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-white/55 text-[#626262] shadow-md backdrop-blur-md transition-colors hover:bg-white/75 hover:text-[#1e1e1e]"
+      >
+        <Info className="h-4 w-4" />
+      </button>
+    );
+  }
+
   return (
-    <div className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-[200px] rounded-xl border border-[#e6e6e6] bg-white/96 p-3 text-[10px] shadow-md backdrop-blur-sm">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => setOpen(false)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setOpen(false);
+        }
+      }}
+      aria-label="Ocultar leyenda de tipos"
+      className="absolute left-4 top-4 z-10 max-w-[200px] cursor-pointer rounded-xl border border-white/40 bg-white/55 p-3 text-[10px] shadow-md backdrop-blur-md transition-colors hover:bg-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/20"
+    >
       <p className="mb-2 font-semibold uppercase tracking-wide text-[#757575]">
         Tipos
       </p>
@@ -126,15 +178,18 @@ function LegendFloat() {
   );
 }
 
-export function FigJamBoard({
-  metrics,
-  selectedId,
-  onSelect,
-}: {
+export type FigJamBoardHandle = {
+  getViewportCenterNorm: () => { x: number; y: number } | null;
+};
+
+type FigJamBoardProps = {
   metrics: Metric[];
   selectedId: string | null;
   onSelect: (m: Metric) => void;
-}) {
+};
+
+export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>(
+  function FigJamBoard({ metrics, selectedId, onSelect }, forwardedRef) {
   const {
     matrixAxes,
     colorCardsByCategory,
@@ -142,6 +197,7 @@ export function FigJamBoard({
     mapClusterMode,
     metricManualPositions,
     setMetricManualPosition,
+    excludedMetricIds,
   } = useAtlasFilters();
 
   const [dragPreview, setDragPreview] = React.useState<{
@@ -149,6 +205,27 @@ export function FigJamBoard({
     x: number;
     y: number;
   } | null>(null);
+  const [hints, setHints] = React.useState<Record<HintKey, HintStatus>>({
+    zoom: "pending",
+    pan: "pending",
+    card: "pending",
+  });
+  const markHintHit = React.useCallback((key: HintKey) => {
+    setHints((prev) => {
+      if (prev[key] !== "pending") return prev;
+      return { ...prev, [key]: "hit" };
+    });
+    window.setTimeout(() => {
+      setHints((prev) =>
+        prev[key] === "hit" ? { ...prev, [key]: "fading" } : prev,
+      );
+    }, 600);
+    window.setTimeout(() => {
+      setHints((prev) =>
+        prev[key] === "fading" ? { ...prev, [key]: "gone" } : prev,
+      );
+    }, 1200);
+  }, []);
   const cardDragRef = React.useRef<{
     pointerId: number;
     id: string;
@@ -174,6 +251,28 @@ export function FigJamBoard({
   zoomRef.current = zoom;
   panRef.current = pan;
 
+  React.useImperativeHandle(
+    forwardedRef,
+    () => ({
+      getViewportCenterNorm: () => {
+        const vp = viewportRef.current;
+        if (!vp) return null;
+        const w = vp.clientWidth;
+        const h = vp.clientHeight;
+        if (w < 8 || h < 8) return null;
+        const z = zoomRef.current;
+        const p = panRef.current;
+        const wx = (w / 2 - p.x) / z;
+        const wy = (h / 2 - p.y) / z;
+        return {
+          x: Math.min(0.97, Math.max(0.03, wx / CANVAS_WORLD_W)),
+          y: Math.min(0.97, Math.max(0.03, wy / CANVAS_WORLD_H)),
+        };
+      },
+    }),
+    [],
+  );
+
   const dragRef = React.useRef<{
     pointerId: number;
     startX: number;
@@ -181,6 +280,33 @@ export function FigJamBoard({
     panX: number;
     panY: number;
   } | null>(null);
+
+  React.useEffect(() => {
+    if (zoom !== 1) markHintHit("zoom");
+  }, [zoom, markHintHit]);
+
+  // Red de seguridad: si el `pointerup` no llega al elemento (por pérdida de captura,
+  // salir del viewport, blur de ventana, etc.) limpiamos el estado de drag a nivel global.
+  React.useEffect(() => {
+    const release = () => {
+      dragRef.current = null;
+      if (cardDragRef.current) {
+        cardDragRef.current = null;
+        liveDragNormRef.current = null;
+        setDragPreview(null);
+      }
+    };
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    window.addEventListener("blur", release);
+    document.addEventListener("visibilitychange", release);
+    return () => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+      window.removeEventListener("blur", release);
+      document.removeEventListener("visibilitychange", release);
+    };
+  }, []);
 
   const centerCamera = React.useCallback(() => {
     const vp = viewportRef.current;
@@ -216,21 +342,62 @@ export function FigJamBoard({
     return () => ro.disconnect();
   }, [centerCamera]);
 
+  /** Zoom mínimo dinámico: el canvas no puede ser más pequeño que el viewport en ningún eje. */
+  const getMinZoom = React.useCallback((vpW: number, vpH: number) => {
+    if (vpW <= 0 || vpH <= 0) return 0.35;
+    return Math.max(vpW / CANVAS_WORLD_W, vpH / CANVAS_WORLD_H);
+  }, []);
+
+  /** Restringe el pan para que el canvas (5600×4200 * zoom) nunca deje hueco fuera del viewport. */
+  const clampPan = React.useCallback(
+    (next: { x: number; y: number }, zoom: number, vpW: number, vpH: number) => {
+      const cw = CANVAS_WORLD_W * zoom;
+      const ch = CANVAS_WORLD_H * zoom;
+      let minX: number;
+      let maxX: number;
+      let minY: number;
+      let maxY: number;
+      if (cw > vpW) {
+        minX = vpW - cw;
+        maxX = 0;
+      } else {
+        minX = 0;
+        maxX = vpW - cw;
+      }
+      if (ch > vpH) {
+        minY = vpH - ch;
+        maxY = 0;
+      } else {
+        minY = 0;
+        maxY = vpH - ch;
+      }
+      return {
+        x: Math.min(maxX, Math.max(minX, next.x)),
+        y: Math.min(maxY, Math.max(minY, next.y)),
+      };
+    },
+    [],
+  );
+
   React.useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
     const onWheelNative = (e: WheelEvent) => {
       e.preventDefault();
+      // Mientras se arrastra una ficha el wheel no debe zoomear el canvas.
+      if (cardDragRef.current) return;
       const rect = el.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       const prevZ = zoomRef.current;
       const prevP = panRef.current;
       const factor = e.deltaY > 0 ? 0.9 : 1.11;
-      const newZoom = clampZoom(prevZ * factor);
+      const minZ = getMinZoom(el.clientWidth, el.clientHeight);
+      const newZoom = clampZoom(prevZ * factor, minZ);
       const wx = (mx - prevP.x) / prevZ;
       const wy = (my - prevP.y) / prevZ;
-      const newPan = { x: mx - wx * newZoom, y: my - wy * newZoom };
+      const rawPan = { x: mx - wx * newZoom, y: my - wy * newZoom };
+      const newPan = clampPan(rawPan, newZoom, el.clientWidth, el.clientHeight);
       zoomRef.current = newZoom;
       panRef.current = newPan;
       setZoom(newZoom);
@@ -238,23 +405,27 @@ export function FigJamBoard({
     };
     el.addEventListener("wheel", onWheelNative, { passive: false });
     return () => el.removeEventListener("wheel", onWheelNative);
-  }, []);
+  }, [clampPan, getMinZoom]);
 
-  const zoomToCluster = React.useCallback((nx: number, ny: number) => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const w = el.clientWidth;
-    const h = el.clientHeight;
-    const prevZ = zoomRef.current;
-    const newZoom = clampZoom(prevZ * 1.45);
-    const cx = nx * CANVAS_WORLD_W;
-    const cy = ny * CANVAS_WORLD_H;
-    const newPan = { x: w / 2 - cx * newZoom, y: h / 2 - cy * newZoom };
-    zoomRef.current = newZoom;
-    panRef.current = newPan;
-    setZoom(newZoom);
-    setPan(newPan);
-  }, []);
+  const zoomToCluster = React.useCallback(
+    (nx: number, ny: number) => {
+      const el = viewportRef.current;
+      if (!el) return;
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      const prevZ = zoomRef.current;
+      const newZoom = clampZoom(prevZ * 1.45, getMinZoom(w, h));
+      const cx = nx * CANVAS_WORLD_W;
+      const cy = ny * CANVAS_WORLD_H;
+      const rawPan = { x: w / 2 - cx * newZoom, y: h / 2 - cy * newZoom };
+      const newPan = clampPan(rawPan, newZoom, w, h);
+      zoomRef.current = newZoom;
+      panRef.current = newPan;
+      setZoom(newZoom);
+      setPan(newPan);
+    },
+    [clampPan, getMinZoom],
+  );
 
   const resetView = React.useCallback(() => {
     zoomRef.current = 1;
@@ -264,6 +435,8 @@ export function FigJamBoard({
 
   const onGridPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    // Si ya hay una ficha capturada, no arrancamos pan paralelo.
+    if (cardDragRef.current) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const p = panRef.current;
     dragRef.current = {
@@ -280,7 +453,12 @@ export function FigJamBoard({
     if (!d || e.pointerId !== d.pointerId) return;
     const dx = e.clientX - d.startX;
     const dy = e.clientY - d.startY;
-    const next = { x: d.panX + dx, y: d.panY + dy };
+    if (Math.hypot(dx, dy) > 4) markHintHit("pan");
+    const el = viewportRef.current;
+    const raw = { x: d.panX + dx, y: d.panY + dy };
+    const next = el
+      ? clampPan(raw, zoomRef.current, el.clientWidth, el.clientHeight)
+      : raw;
     panRef.current = next;
     setPan(next);
   };
@@ -301,23 +479,14 @@ export function FigJamBoard({
     [matrixAxes, metricManualPositions, metrics],
   );
 
-  React.useEffect(() => {
-    if (!selectedId) return;
-    const el = viewportRef.current;
-    const pos = layoutMap.get(selectedId);
-    if (!el || !pos) return;
-    const z = zoomRef.current;
-    const next = {
-      x: el.clientWidth / 2 - pos.x * CANVAS_WORLD_W * z,
-      y: el.clientHeight / 2 - pos.y * CANVAS_WORLD_H * z,
-    };
-    panRef.current = next;
-    setPan(next);
-  }, [layoutMap, selectedId]);
+  const renderableMetrics = React.useMemo(
+    () => metrics.filter((m) => !excludedMetricIds.includes(m.id)),
+    [metrics, excludedMetricIds],
+  );
 
   const points: MapPoint[] = React.useMemo(
     () =>
-      metrics.map((m) => {
+      renderableMetrics.map((m) => {
         const base = layoutMap.get(m.id) ?? { x: 0.5, y: 0.5 };
         const d = dragPreview?.id === m.id ? dragPreview : null;
         return {
@@ -327,7 +496,7 @@ export function FigJamBoard({
           metric: m,
         };
       }),
-    [dragPreview, layoutMap, metrics],
+    [dragPreview, layoutMap, renderableMetrics],
   );
 
   const clusters = React.useMemo(() => {
@@ -387,17 +556,6 @@ export function FigJamBoard({
         <span className="text-[8px] text-[#757575]">der. →</span>
       </span>
 
-      <div className="pointer-events-none absolute left-1/2 top-9 z-[15] -translate-x-1/2 rounded-md border border-[#e6e6e6] bg-white/92 px-2 py-1 text-center shadow-sm backdrop-blur-sm">
-        <p className="text-[9px] font-semibold uppercase tracking-wide text-[#757575]">
-          Team matrix
-        </p>
-        <p className="text-[10px] font-medium text-[#1e1e1e]">
-          <span className="text-[#555]">{xAxisTitle}</span>
-          <span className="mx-1 text-[#b3b3b3]">×</span>
-          <span className="text-[#555]">{yAxisTitle}</span>
-        </p>
-      </div>
-
       <div
         ref={viewportRef}
         className="absolute inset-0 touch-none overflow-hidden rounded-[24px] border border-[#dcdcdc] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
@@ -408,10 +566,10 @@ export function FigJamBoard({
         role="application"
         aria-label={`Team matrix: ${xAxisTitle} por ${yAxisTitle}. Zoom y arrastre.`}
       >
-        <div className="absolute right-2 top-2 z-20 flex flex-col gap-1 rounded-lg border border-[#e6e6e6] bg-white/96 p-1 shadow-sm">
+        <div className="absolute right-2 top-2 z-20 flex flex-col gap-1 rounded-full border border-white/40 bg-white/55 p-1 shadow-sm backdrop-blur-md">
           <button
             type="button"
-            className="rounded p-1.5 text-[#626262] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[#f0f0f0] hover:text-[#1e1e1e] hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/20"
+            className="rounded-full p-1.5 text-[#626262] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[#f0f0f0] hover:text-[#1e1e1e] hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/20"
             aria-label="Acercar"
             onClick={() => {
               const el = viewportRef.current;
@@ -422,10 +580,11 @@ export function FigJamBoard({
               const my = h / 2;
               const prevZ = zoomRef.current;
               const prevP = panRef.current;
-              const newZoom = clampZoom(prevZ * 1.2);
+              const newZoom = clampZoom(prevZ * 1.2, getMinZoom(w, h));
               const wx = (mx - prevP.x) / prevZ;
               const wy = (my - prevP.y) / prevZ;
-              const newPan = { x: mx - wx * newZoom, y: my - wy * newZoom };
+              const rawPan = { x: mx - wx * newZoom, y: my - wy * newZoom };
+              const newPan = clampPan(rawPan, newZoom, w, h);
               zoomRef.current = newZoom;
               panRef.current = newPan;
               setZoom(newZoom);
@@ -436,7 +595,7 @@ export function FigJamBoard({
           </button>
           <button
             type="button"
-            className="rounded p-1.5 text-[#626262] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[#f0f0f0] hover:text-[#1e1e1e] hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/20"
+            className="rounded-full p-1.5 text-[#626262] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[#f0f0f0] hover:text-[#1e1e1e] hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/20"
             aria-label="Alejar"
             onClick={() => {
               const el = viewportRef.current;
@@ -447,10 +606,11 @@ export function FigJamBoard({
               const my = h / 2;
               const prevZ = zoomRef.current;
               const prevP = panRef.current;
-              const newZoom = clampZoom(prevZ / 1.2);
+              const newZoom = clampZoom(prevZ / 1.2, getMinZoom(w, h));
               const wx = (mx - prevP.x) / prevZ;
               const wy = (my - prevP.y) / prevZ;
-              const newPan = { x: mx - wx * newZoom, y: my - wy * newZoom };
+              const rawPan = { x: mx - wx * newZoom, y: my - wy * newZoom };
+              const newPan = clampPan(rawPan, newZoom, w, h);
               zoomRef.current = newZoom;
               panRef.current = newPan;
               setZoom(newZoom);
@@ -461,7 +621,7 @@ export function FigJamBoard({
           </button>
           <button
             type="button"
-            className="rounded p-1.5 text-[#626262] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[#f0f0f0] hover:text-[#1e1e1e] hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/20"
+            className="rounded-full p-1.5 text-[#626262] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[#f0f0f0] hover:text-[#1e1e1e] hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/20"
             aria-label="Restablecer vista"
             onClick={resetView}
           >
@@ -469,11 +629,51 @@ export function FigJamBoard({
           </button>
         </div>
 
-        <p className="pointer-events-none absolute bottom-2 left-2 z-20 max-w-[min(100%,280px)] text-[9px] leading-snug text-[#757575]">
-          Cuadrantes = matriz 2×2 · Rueda: zoom · Arrastra el fondo · Arrastra ficha =
-          posición manual
-          {mapClusterMode ? " · Clic en círculo: acercar al grupo" : null}
-        </p>
+        {(() => {
+          const row1 = [
+            { key: "zoom" as const, label: "Rueda: zoom", status: hints.zoom },
+            { key: "pan" as const, label: "Arrastra el fondo", status: hints.pan },
+          ].filter((item) => item.status !== "gone");
+          if (
+            row1.length === 0 &&
+            hints.card === "gone" &&
+            !mapClusterMode
+          ) {
+            return null;
+          }
+          return (
+            <div className="pointer-events-none absolute bottom-2 left-2 z-20 max-w-[min(100%,280px)] text-[9px] leading-snug">
+              {row1.length > 0 ? (
+                <p>
+                  {row1.map((item, i) => (
+                    <React.Fragment key={item.key}>
+                      {i > 0 ? (
+                        <span className="text-[#757575]"> · </span>
+                      ) : null}
+                      <HintItem status={item.status}>{item.label}</HintItem>
+                    </React.Fragment>
+                  ))}
+                </p>
+              ) : null}
+              {hints.card !== "gone" ? (
+                <p>
+                  <HintItem status={hints.card}>
+                    Arrastra ficha = posición manual
+                  </HintItem>
+                  {mapClusterMode ? (
+                    <span className="text-[#757575]">
+                      {" · Clic en círculo: acercar al grupo"}
+                    </span>
+                  ) : null}
+                </p>
+              ) : mapClusterMode ? (
+                <p className="text-[#757575]">
+                  Clic en círculo: acercar al grupo
+                </p>
+              ) : null}
+            </div>
+          );
+        })()}
 
         <div
           className="absolute left-0 top-0 will-change-transform"
@@ -618,7 +818,10 @@ export function FigJamBoard({
                   if (!d || e.pointerId !== d.pointerId || d.id !== m.id) return;
                   const dx = e.clientX - d.cx;
                   const dy = e.clientY - d.cy;
-                  if (Math.hypot(dx, dy) > 4) d.moved = true;
+                  if (Math.hypot(dx, dy) > 4) {
+                    d.moved = true;
+                    markHintHit("card");
+                  }
                   const z = zoomRef.current;
                   const dnx = dx / z / CANVAS_WORLD_W;
                   const dny = dy / z / CANVAS_WORLD_H;
@@ -663,6 +866,11 @@ export function FigJamBoard({
                     <span className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-[#757575]">
                       {legendRow?.label ?? "Métrica"}
                     </span>
+                    {m.archived ? (
+                      <span className="ml-auto rounded-md bg-[#fff3cd] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-[#8a6d3b]">
+                        Obsoleta
+                      </span>
+                    ) : null}
                   </span>
                   <span className="block text-[13px] font-semibold leading-[1.35] tracking-[-0.01em] text-[#1e1e1e]">
                     {label}
@@ -674,11 +882,8 @@ export function FigJamBoard({
         </div>
       </div>
 
-      {metrics.length === 0 ? (
-        <p className="absolute inset-0 flex items-center justify-center text-sm text-[#757575]">
-          Ninguna métrica con estos filtros. Ajusta variables a la izquierda.
-        </p>
-      ) : null}
     </div>
   );
-}
+  },
+);
+FigJamBoard.displayName = "FigJamBoard";

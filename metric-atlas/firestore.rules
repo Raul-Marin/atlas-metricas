@@ -1,0 +1,80 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // ──────────── Datos por usuario ────────────
+    // Cada usuario solo puede leer y escribir su propio espacio en /users/{uid}/...
+    match /users/{userId}/{document=**} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Lectura pública del documento del board cuando exista una entrada en
+    // /sharedBoards/{boardId} con enabled === true.
+    match /users/{userId}/boards/{boardId} {
+      allow read: if exists(/databases/$(database)/documents/sharedBoards/$(boardId))
+        && get(/databases/$(database)/documents/sharedBoards/$(boardId)).data.enabled == true;
+    }
+
+    // ──────────── Share state ────────────
+    // Lectura pública (para resolver el ownerUid desde el token);
+    // creación/actualización/borrado solo por el propietario del board.
+    match /sharedBoards/{boardId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.ownerUid;
+      allow update: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // ──────────── Admin ────────────
+    // Cada doc /admins/{uid} habilita al usuario como admin.
+    // Lectura: el propio uid (para el guard) o cualquier admin (para listar).
+    // Escritura: solo otros admins (para promover/revocar). El bootstrap del
+    // primer admin se hace fuera del cliente.
+    match /admins/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ──────────── Catálogo global de métricas ────────────
+    // Lectura pública (la vista compartida es anónima).
+    // Escritura solo admin.
+    match /metrics/{metricId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ──────────── Plantillas globales ────────────
+    // Lectura pública (las usa el dashboard al crear matrices).
+    // Escritura solo admin.
+    match /templates/{templateId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ──────────── Mirror de usuarios ────────────
+    // Lectura: admin o el propio uid.
+    // Escritura: el propio uid (auto-mirror desde el AuthProvider al login)
+    //           o admin (creación/edición/borrado manual desde /admin/users).
+    match /userProfiles/{uid} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow create, update: if isAdmin()
+        || (isSignedIn()
+            && request.auth.uid == uid
+            && request.resource.data.uid == uid);
+      allow delete: if isAdmin();
+    }
+  }
+}

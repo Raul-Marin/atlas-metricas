@@ -2,44 +2,60 @@
 
 import * as React from "react";
 import Link from "next/link";
-import type { Metric } from "@/lib/types";
+import {
+  doc,
+  onSnapshot,
+} from "firebase/firestore";
 import { AtlasFiltersProvider } from "@/context/atlas-filters-context";
-import { getBoardById, type MatrixBoard } from "@/lib/matrix-boards";
+import { sanitizeBoard, type MatrixBoard } from "@/lib/matrix-boards";
+import { getDb } from "@/lib/firebase/client";
+import { useAuth } from "@/lib/auth/auth-provider";
+import { useMetrics } from "@/lib/metrics/provider";
 import { AtlasWorkspace } from "./atlas-workspace";
 import { BoardPersistence } from "./board-persistence";
 
-export function BoardPageClient({
-  boardId,
-  metrics,
-}: {
-  boardId: string;
-  metrics: Metric[];
-}) {
-  const [board, setBoard] = React.useState<MatrixBoard | "missing" | "loading">(
-    "loading",
-  );
+type BoardState = MatrixBoard | "missing" | "loading" | "no-user";
+
+export function BoardPageClient({ boardId }: { boardId: string }) {
+  const { metrics, loading: metricsLoading } = useMetrics();
+  const { user, loading: authLoading } = useAuth();
+  const [board, setBoard] = React.useState<BoardState>("loading");
 
   React.useEffect(() => {
-    const b = getBoardById(boardId);
-    setBoard(b ?? "missing");
-    const onStorage = () => {
-      const next = getBoardById(boardId);
-      setBoard(next ?? "missing");
-    };
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("metric-atlas-boards-changed", onStorage);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("metric-atlas-boards-changed", onStorage);
-    };
-  }, [boardId]);
+    if (authLoading) return;
+    if (!user) {
+      setBoard("no-user");
+      return;
+    }
+    setBoard("loading");
+    const ref = doc(getDb(), "users", user.uid, "boards", boardId);
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        if (!snap.exists()) {
+          setBoard("missing");
+          return;
+        }
+        setBoard(sanitizeBoard({ ...(snap.data() as MatrixBoard), id: snap.id }));
+      },
+      (err) => {
+        console.error("[board-page] snapshot", err);
+        setBoard("missing");
+      },
+    );
+    return unsub;
+  }, [user, authLoading, boardId]);
 
-  if (board === "loading") {
+  if (board === "loading" || authLoading || metricsLoading) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-[#f5f5f5] text-sm text-[#757575]">
         Cargando matrix…
       </div>
     );
+  }
+
+  if (board === "no-user") {
+    return null;
   }
 
   if (board === "missing") {

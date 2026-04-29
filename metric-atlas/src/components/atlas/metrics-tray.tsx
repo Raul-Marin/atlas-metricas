@@ -13,11 +13,15 @@ function categoryMeta(metric: Metric) {
 export function MetricsTray({
   metrics,
   selectedId,
+  excludedIds,
   onSelect,
+  variant = "card",
 }: {
   metrics: Metric[];
   selectedId: string | null;
+  excludedIds?: string[];
   onSelect: (metric: Metric) => void;
+  variant?: "card" | "flat";
 }) {
   const [query, setQuery] = React.useState("");
 
@@ -33,13 +37,19 @@ export function MetricsTray({
     );
   }, [metrics, query]);
 
+  const flat = variant === "flat";
+
   return (
-    <section className="rounded-lg border border-[#e6e6e6] bg-white p-3 shadow-sm">
-      <div className="mb-3 flex items-center justify-between gap-2">
+    <section
+      className={cn(
+        "flex min-h-0 flex-col",
+        flat
+          ? "h-full"
+          : "rounded-lg border border-[#e6e6e6] bg-white p-3 shadow-sm",
+      )}
+    >
+      <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#757575]">
-            Métricas
-          </p>
           <p className="text-[11px] text-[#757575]">
             Selecciona una ficha para enfocarla en el canvas.
           </p>
@@ -49,7 +59,7 @@ export function MetricsTray({
         </span>
       </div>
 
-      <div className="mb-3">
+      <div className="mb-3 shrink-0">
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -58,10 +68,16 @@ export function MetricsTray({
         />
       </div>
 
-      <div className="max-h-[46dvh] space-y-2 overflow-y-auto pr-1">
+      <div
+        className={cn(
+          "space-y-2 overflow-y-auto pr-1",
+          flat ? "min-h-0 flex-1" : "max-h-[46dvh]",
+        )}
+      >
         {filtered.map((metric) => {
           const meta = categoryMeta(metric);
           const selected = selectedId === metric.id;
+          const excluded = excludedIds?.includes(metric.id) ?? false;
           const accent = vizCategoryCardAccent(metricVizCategory(metric), { selected });
 
           return (
@@ -69,6 +85,7 @@ export function MetricsTray({
               key={metric.id}
               type="button"
               onClick={() => onSelect(metric)}
+              title={excluded ? "Click para volver a añadir al canvas" : undefined}
               className={cn(
                 "w-full rounded-lg border px-3 py-2 text-left transition-[box-shadow,transform,border-color] duration-150 ease-out",
                 selected
@@ -76,8 +93,12 @@ export function MetricsTray({
                   : "hover:translate-y-[-1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.05)]",
               )}
               style={{
-                backgroundColor: accent.backgroundColor,
-                borderColor: selected ? "#0d99ff" : accent.borderColor,
+                backgroundColor: excluded ? "#ffffff" : accent.backgroundColor,
+                borderColor: selected
+                  ? "#0d99ff"
+                  : excluded
+                    ? "#e6e6e6"
+                    : accent.borderColor,
               }}
             >
               <div className="flex items-start gap-2">
@@ -90,7 +111,7 @@ export function MetricsTray({
                     {metric.shortName ?? metric.name}
                   </p>
                   <p className="mt-1 truncate text-[10px] uppercase tracking-[0.08em] text-[#757575]">
-                    {meta?.label ?? "Métrica"}
+                    {excluded ? "Fuera del canvas · click para añadir" : meta?.label ?? "Métrica"}
                   </p>
                 </div>
               </div>

@@ -24,6 +24,10 @@ type AtlasFiltersContextValue = {
   metricManualPositions: ManualPositionsMap;
   setMetricManualPosition: (metricId: string, pos: { x: number; y: number }) => void;
   clearMetricManualPositions: () => void;
+  excludedMetricIds: string[];
+  excludeMetric: (metricId: string) => void;
+  includeMetric: (metricId: string) => void;
+  clearExcludedMetrics: () => void;
 };
 
 const AtlasFiltersContext = React.createContext<
@@ -39,6 +43,7 @@ function buildInitialState(initialCanvas?: MatrixBoardCanvasSettings | null) {
     showMatrixQuadrantColors: c.showMatrixQuadrantColors,
     mapClusterMode: c.mapClusterMode,
     metricManualPositions: c.metricManualPositions ?? {},
+    excludedMetricIds: c.excludedMetricIds ?? [],
   };
 }
 
@@ -63,6 +68,9 @@ export function AtlasFiltersProvider({
   const [metricManualPositions, setMetricManualPositions] = React.useState<
     ManualPositionsMap
   >(init.metricManualPositions);
+  const [excludedMetricIds, setExcludedMetricIds] = React.useState<string[]>(
+    init.excludedMetricIds,
+  );
 
   const setMatrixAxes = React.useCallback(
     (action: React.SetStateAction<MatrixAxesState>) => {
@@ -96,6 +104,20 @@ export function AtlasFiltersProvider({
     setMetricManualPositions({});
   }, []);
 
+  const excludeMetric = React.useCallback((metricId: string) => {
+    setExcludedMetricIds((prev) =>
+      prev.includes(metricId) ? prev : [...prev, metricId],
+    );
+  }, []);
+
+  const includeMetric = React.useCallback((metricId: string) => {
+    setExcludedMetricIds((prev) => prev.filter((id) => id !== metricId));
+  }, []);
+
+  const clearExcludedMetrics = React.useCallback(() => {
+    setExcludedMetricIds([]);
+  }, []);
+
   const value = React.useMemo(
     () => ({
       filters,
@@ -113,6 +135,10 @@ export function AtlasFiltersProvider({
       metricManualPositions,
       setMetricManualPosition,
       clearMetricManualPositions,
+      excludedMetricIds,
+      excludeMetric,
+      includeMetric,
+      clearExcludedMetrics,
     }),
     [
       colorCardsByCategory,
@@ -129,6 +155,10 @@ export function AtlasFiltersProvider({
       setShowMatrixQuadrantColors,
       showMatrixQuadrantColors,
       clearMetricManualPositions,
+      excludedMetricIds,
+      excludeMetric,
+      includeMetric,
+      clearExcludedMetrics,
     ],
   );
 

@@ -25,7 +25,13 @@ function ListSection({
   );
 }
 
-export function MetricDetail({ metric }: { metric: Metric }) {
+export function MetricDetail({
+  metric,
+  onOpenRelated,
+}: {
+  metric: Metric;
+  onOpenRelated: (metric: Metric) => void;
+}) {
   const primaryLabel =
     sourceLegend.find((s) => s.value === metric.sourcePrimary)?.label ??
     metric.sourcePrimary;
@@ -35,7 +41,7 @@ export function MetricDetail({ metric }: { metric: Metric }) {
     ) ?? [];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="space-y-4">
       <section className="rounded-lg border border-[#e6e6e6] bg-white p-5 shadow-sm">
         <div className="space-y-4">
           <div>
@@ -109,7 +115,10 @@ export function MetricDetail({ metric }: { metric: Metric }) {
               Métricas relacionadas
             </h2>
             <div className="mt-3">
-              <RelatedMetrics relatedMetricIds={metric.relatedMetricIds} />
+              <RelatedMetrics
+                relatedMetricIds={metric.relatedMetricIds}
+                onOpenMetric={onOpenRelated}
+              />
             </div>
           </section>
         </aside>

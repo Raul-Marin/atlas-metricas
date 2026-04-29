@@ -38,46 +38,54 @@ export function MatrixAxisControls({
 
   const isDefault =
     matrixAxes.axisX === "measurementType" && matrixAxes.axisY === "layer";
+  const activeCount =
+    (matrixAxes.axisX !== "measurementType" ? 1 : 0) +
+    (matrixAxes.axisY !== "layer" ? 1 : 0) +
+    (colorCardsByCategory ? 1 : 0) +
+    (showMatrixQuadrantColors ? 0 : 1) +
+    (mapClusterMode ? 1 : 0);
   const [open, setOpen] = React.useState(!compact);
 
   return (
-    <div
+    <section
       className={cn(
-        "rounded-lg border border-[#e6e6e6] bg-[#fcfcfc] p-3",
+        "rounded-md border border-[#ececec] bg-[#fcfcfc]",
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen((value) => !value)}
-          className="flex min-w-0 items-center gap-2 text-left"
-        >
-          <span
-            className={cn(
-              "font-semibold uppercase tracking-wide text-[#757575]",
-              compact ? "text-[10px]" : "text-[11px]",
-            )}
-          >
-            Ejes del mapa
-          </span>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center justify-between px-3 py-2 text-left"
+      >
+        <span className="text-[10px] font-medium uppercase tracking-wider text-[#757575]">
+          Ejes del mapa
+        </span>
+        <span className="flex items-center gap-2">
+          {activeCount > 0 ? (
+            <span className="rounded-md bg-[#f0f7ff] px-1.5 py-0.5 text-[10px] font-medium text-[#0d99ff]">
+              {activeCount}
+            </span>
+          ) : null}
           <span className="text-xs text-[#949494]">{open ? "−" : "+"}</span>
-        </button>
-        {!isDefault && open ? (
-          <button
-            type="button"
-            onClick={resetMatrixAxes}
-            className="text-[10px] text-[#757575] underline-offset-2 hover:text-[#1e1e1e] hover:underline"
-          >
-            Restablecer
-          </button>
-        ) : null}
-      </div>
+        </span>
+      </button>
       {open ? (
-        <>
+        <div className="border-t border-[#eeeeee] px-3 py-3">
+          {!isDefault ? (
+            <div className="mb-2 flex justify-end">
+              <button
+                type="button"
+                onClick={resetMatrixAxes}
+                className="text-[10px] text-[#757575] underline-offset-2 hover:text-[#1e1e1e] hover:underline"
+              >
+                Restablecer
+              </button>
+            </div>
+          ) : null}
           <p
             className={cn(
-              "mb-3 mt-3 text-[#626262]",
+              "mb-3 text-[#626262]",
               compact ? "text-[10px] leading-snug" : "text-xs",
             )}
           >
@@ -228,8 +236,8 @@ export function MatrixAxisControls({
               </button>
             ) : null}
           </div>
-        </>
+        </div>
       ) : null}
-    </div>
+    </section>
   );
 }

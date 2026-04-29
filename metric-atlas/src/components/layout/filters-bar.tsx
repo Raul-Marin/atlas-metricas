@@ -40,10 +40,12 @@ function chipClass(on: boolean) {
 function FilterSection({
   title,
   defaultOpen = true,
+  count = 0,
   children,
 }: {
   title: string;
   defaultOpen?: boolean;
+  count?: number;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
@@ -58,7 +60,14 @@ function FilterSection({
         <span className="text-[10px] font-medium uppercase tracking-wider text-[#757575]">
           {title}
         </span>
-        <span className="text-xs text-[#949494]">{open ? "−" : "+"}</span>
+        <span className="flex items-center gap-2">
+          {count > 0 ? (
+            <span className="rounded-md bg-[#f0f7ff] px-1.5 py-0.5 text-[10px] font-medium text-[#0d99ff]">
+              {count}
+            </span>
+          ) : null}
+          <span className="text-xs text-[#949494]">{open ? "−" : "+"}</span>
+        </span>
       </button>
       {open ? <div className="border-t border-[#eeeeee] px-3 py-3">{children}</div> : null}
     </section>
@@ -159,14 +168,9 @@ export function FiltersBar({
         </div>
       )}
 
-      {minimal ? (
-        <div className="mb-4">
-          <MatrixAxisControls compact />
-        </div>
-      ) : null}
-
-      <div className="flex flex-col gap-3">
-        <FilterSection title="Capa" defaultOpen={false}>
+      <div className="flex flex-col gap-1.5">
+        {minimal ? <MatrixAxisControls compact /> : null}
+        <FilterSection title="Capa" defaultOpen={false} count={filters.layers.length}>
           <div className="flex flex-wrap gap-1.5">
             {METRIC_LAYERS.map((layer) => {
               const on = filters.layers.includes(layer);
@@ -187,7 +191,7 @@ export function FiltersBar({
           </div>
         </FilterSection>
 
-        <FilterSection title="Tipo de medición" defaultOpen={false}>
+        <FilterSection title="Tipo de medición" defaultOpen={false} count={filters.measurementTypes.length}>
           <div className="flex flex-wrap gap-1.5">
             {MEASUREMENT_TYPES.map((mt) => {
               const on = filters.measurementTypes.includes(mt);
@@ -208,7 +212,7 @@ export function FiltersBar({
           </div>
         </FilterSection>
 
-        <FilterSection title="Fuente" defaultOpen={false}>
+        <FilterSection title="Fuente" defaultOpen={false} count={filters.sources.length}>
           <div className="flex flex-wrap gap-1.5">
             {SOURCE_TYPES.map((s) => {
               const meta = sourceLegend.find((x) => x.value === s);
@@ -231,7 +235,15 @@ export function FiltersBar({
           </div>
         </FilterSection>
 
-        <FilterSection title="Disponibilidad Figma" defaultOpen={true}>
+        <FilterSection
+          title="Disponibilidad Figma"
+          defaultOpen={true}
+          count={
+            filters.figmaAvailability.length +
+            (filters.experimentalOnly ? 1 : 0) +
+            (filters.aiRelatedOnly ? 1 : 0)
+          }
+        >
           <div className="flex flex-wrap gap-1.5">
             {FIGMA_AVAILABILITY.map((fa) => {
               const on = filters.figmaAvailability.includes(fa);

@@ -57,6 +57,10 @@ export interface Metric {
   automationIdeas?: string[];
   risksBiases?: string[];
   priority?: number;
+  /** Métricas archivadas siguen apareciendo en boards que ya las usan
+   *  con un badge "Obsoleta", pero quedan ocultas de la documentación
+   *  y de los nuevos boards. */
+  archived?: boolean;
 }
 
 export interface AtlasFilters {
