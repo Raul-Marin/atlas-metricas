@@ -1,6 +1,6 @@
 <div align="center">
   <h1>🗺️ Metric Atlas</h1>
-  <p><strong>Plataforma para mapear y documentar métricas de Design Systems en la era de la IA.</strong></p>
+  <p><strong>Enciclopedia visual e interactiva de métricas para Design Systems en la era de la IA.</strong></p>
   <p>
     <img src="https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js" alt="Next.js" />
     <img src="https://img.shields.io/badge/React-19-blue?style=flat-square&logo=react" alt="React" />
@@ -12,153 +12,296 @@
 
 <br />
 
-## 📖 Introducción y Visión General
-
-Metric Atlas es una herramienta de gestión y visualización de **métricas para Design Systems**, pensada específicamente para la era de la IA. Nuestro objetivo es cerrar la brecha de comunicación entre diseño, producto y desarrollo. 
-
-**¿En qué consiste?**
-La plataforma permite a los usuarios:
-- **Visualizar:** A través de *Boards 2x2* (lienzos interactivos al estilo FigJam) para mapear métricas visualmente según su impacto y esfuerzo.
-- **Documentar:** Un catálogo detallado (fichas) por cada métrica, permitiendo ver sus variables, estados y definición.
-- **Filtrar y Organizar:** Sistema de filtros dinámicos para encontrar rápidamente la métrica que necesitas.
-- **Personalizar:** Todo el contenido es propio de cada usuario, persistido en la nube en tiempo real mediante Firebase.
+<div align="center">
+  <img src="./preview-home.png" alt="Vista previa de Metric Atlas" width="860" />
+  <p><sub>Workspace de Metric Atlas: catálogo de métricas + lienzo de matriz 2×2.</sub></p>
+</div>
 
 ---
 
-## 🏗️ Arquitectura y Mantenimiento del Repositorio
+## 📖 ¿Qué es Metric Atlas?
 
-La arquitectura del proyecto está diseñada para ser escalable y fácil de mantener. A continuación, se detallan las pautas establecidas para el desarrollo de nuevas funcionalidades y el mantenimiento del código existente:
+Metric Atlas es una herramienta para **catalogar, documentar y visualizar métricas de Design Systems**, pensada para equipos que trabajan con diseño, producto, desarrollo y automatización con IA.
 
-### 1. Single Source of Truth
-- **Catálogo Base:** La adición o modificación de las métricas predeterminadas del sistema se gestiona desde el origen de datos estático en `src/data/metrics.ts`.
-- **Estilos Globales:** Cualquier alteración en la paleta de colores base o variables estructurales debe centralizarse en `src/styles/globals.css`. Es mandatorio utilizar las clases de Tailwind basadas en las variables `hsl` del proyecto, evitando el uso de colores hexadecimales (hardcoded) en los componentes.
+La idea central: tomar un catálogo de métricas (cada una con su ficha rica) y **colocarlas en lienzos 2×2** donde cada eje es una variable de la métrica (tipo de medición, capa, fuente, madurez, calidad de señal, etc.). Así puedes razonar visualmente sobre qué medir, dónde está el valor y qué tiene mejor señal.
 
-### 2. Flujo de Desarrollo
-- **UI / Componentes:** El desarrollo de la interfaz se basa en componentes modulares ubicados en la carpeta `src/components/`. Se debe mantener una estricta filosofía de encapsulación y asegurar que todos los componentes cumplan con los estándares de accesibilidad (a11y) utilizando las primitivas de Radix UI correspondientes.
-- **Vistas / Rutas:** La creación de nuevas páginas se realiza en el directorio `src/app/(app)/`. El proyecto utiliza el App Router de Next.js, por lo que los componentes son `Server Components` por defecto. La directiva `"use client"` está reservada exclusivamente para componentes que requieran interactividad del lado del cliente (hojas, modales, formularios, estado complejo).
-- **Backend / Firebase:** La interacción con la base de datos y la lógica de negocio se abstraen a través de Custom Hooks ubicados en `src/lib/boards/`. Al crear una nueva colección o documento en Firestore, es imprescindible actualizar las reglas en `firestore.rules` para garantizar que el acceso esté restringido a la información del usuario respectivo (`users/{uid}/...`).
+### Capacidades principales
 
-### 3. Estándares y Buenas Prácticas
-1. **Tipado Estricto:** Se requiere el uso constante de las interfaces definidas en `src/lib/matrix-boards.ts` para mantener la robustez y consistencia de los datos en toda la aplicación.
-2. **Validación Pre-Integración:** Antes de proponer cualquier cambio (Pull Request), el código debe someterse a análisis mediante `npm run lint` y verificar que el proceso de compilación (`npm run build`) se ejecute sin errores.
-
+- **🧭 Catálogo de métricas** — Cada métrica es una ficha con descripción, por qué importa, cómo medirla, fuentes, riesgos/sesgos y métricas relacionadas.
+- **🟦 Lienzos 2×2 (estilo FigJam)** — Coloca métricas en una matriz arrastrando fichas; elige qué variable va en cada eje. Cada board es persistente y privado.
+- **🗂️ Spaces** — Agrupa tus boards en carpetas.
+- **🔍 Filtros dinámicos** — Filtra el catálogo por capa, fuente, tipo de medición, disponibilidad en Figma, experimental, relacionado con IA…
+- **🔗 Compartir solo lectura** — Genera un enlace público de un board concreto sin exponer tu cuenta; revócalo cuando quieras.
+- **🛠️ Panel de administración** — Gestiona el catálogo de métricas, plantillas de matriz y usuarios/roles desde `/admin`.
 
 ---
 
-## 🎨 Para Diseñadores (Design System & UI)
+## 🏗️ Arquitectura
 
-La plataforma está construida priorizando la estética y la coherencia del **Design System**. Hemos adoptado un enfoque "Glassmorphism" con transiciones suaves, modo oscuro nativo, y una paleta de colores cuidadosamente curada basada en **variables HSL** para un control absoluto desde Tailwind y CSS puro.
+Aplicación **Next.js 15 (App Router)** desplegada con SSR en **Firebase App Hosting**, usando el **SDK de cliente de Firebase** (Auth + Firestore) directamente desde el navegador. No hay backend propio ni Admin SDK: la seguridad vive en las **reglas de Firestore**.
 
-### Identidad Visual & Temas
+```mermaid
+flowchart LR
+  subgraph Cliente["🌐 Navegador (Next.js App Router)"]
+    UI["Componentes React 19<br/>(Server + Client Components)"]
+    Providers["Providers<br/>Auth · Metrics · Templates"]
+    Logic["Lógica pura<br/>matrix-axes · metric-layout · filters"]
+  end
 
-La UI se maneja a través de un sistema dual (Light/Dark) altamente optimizado, inyectado mediante clases en `src/styles/globals.css`.
+  subgraph Firebase["🔥 Firebase"]
+    Auth["Authentication<br/>Email/Password · Google"]
+    FS[("Firestore<br/>boards · spaces · metrics<br/>templates · sharedBoards")]
+    Rules["firestore.rules<br/>(autorización)"]
+  end
 
-| Token HSL | Light Mode (Aero/Clean) | Dark Mode (Deep/Gold) | Uso Principal |
-| :--- | :--- | :--- | :--- |
-| **Background** | `210 20% 98%` | `220 16% 8%` | Fondo base de las vistas. |
-| **Foreground** | `0 0% 12%` | `45 20% 96%` | Textos primarios y encabezados. |
-| **Accent/Primary**| `204 100% 53%` (Azul vibrante) | `38 42% 58%` (Oro/Mostaza) | Botones, rings, highlights, CTAs. |
-| **Card** | `0 0% 100%` (Blanco puro) | `220 14% 11%` | Superficies de las tarjetas y modales. |
-| **Border** | `0 0% 90%` | `220 12% 20%` | Divisores sutiles y delineados de inputs. |
-| **Radius** | `0.625rem` | `0.625rem` | Curvaturas estándar en toda la UI. |
+  Hosting["☁️ Firebase App Hosting<br/>(SSR + build)"]
 
-* **Tipografía**: Optimizada para legibilidad (`optimizeLegibility`), con propiedades avanzadas (`font-feature-settings: "ss01" 1, "cv01" 1, "cv11" 1`).
-* **Componentes**: Utiliza la filosofía de **Radix UI** + **Tailwind CSS**, permitiendo una accesibilidad total (a11y) sin comprometer el estilo visual.
+  UI --> Providers
+  Providers --> Logic
+  Providers <-->|"SDK cliente"| Auth
+  Providers <-->|"SDK cliente"| FS
+  Rules -.protege.-> FS
+  Hosting -.sirve.-> Cliente
+```
+
+### Flujo de render en `/`
+
+La raíz decide qué mostrar según el estado de sesión. **No existe una ruta `/login`**: la autenticación es un **modal** sobre la landing. (`/login` solo redirige a `/` por compatibilidad.)
+
+```mermaid
+flowchart TD
+  Root["GET / (app/page.tsx)"] --> Loading{¿Cargando sesión?}
+  Loading -->|Sí| Spinner["Spinner 'Cargando…'"]
+  Loading -->|No| Auth{¿Usuario autenticado?}
+  Auth -->|No| Landing["LandingPage<br/>+ AuthModal (signin/signup)"]
+  Auth -->|Sí| Dash["MatrixDashboard<br/>(boards · spaces · biblioteca de métricas)"]
+
+  Guard["Rutas protegidas<br/>(app)/board/[id] · /admin"] -->|sin sesión| Redirect["redirect a /?next=…<br/>→ abre el modal"]
+```
 
 ---
 
-## 💻 Para Desarrolladores (Arquitectura & Código)
-
-### Estructura del Proyecto
-
-El código fuente utiliza **Next.js App Router** y se organiza para una separación estricta de responsabilidades:
+## 🗂️ Estructura del proyecto
 
 ```text
 src/
-├── app/
-│   ├── (auth)/login/        # Pantalla de login + registro
-│   ├── (app)/               # Rutas protegidas (requieren sesión activa)
-│   │   ├── page.tsx         # Dashboard principal de matrices
-│   │   ├── board/[id]/      # Vista de Canvas individual 2x2
-│   │   └── metrics/         # Biblioteca y fichas de métricas detalladas
-│   ├── api/metrics/         # Endpoint público con el catálogo
-│   └── globals.css          # Core Design System (Variables HSL, theming)
-├── components/              # Componentes de UI modulares y reutilizables
+├── app/                          # Next.js App Router
+│   ├── layout.tsx                # Root layout (fuentes, <Providers>)
+│   ├── providers.tsx             # Auth + Metrics + Templates providers
+│   ├── page.tsx                  # Raíz: landing (modal) o dashboard según sesión
+│   ├── error.tsx                 # Error boundary global
+│   ├── (app)/                    # Grupo de rutas protegidas (AppGuardLayout)
+│   │   ├── layout.tsx            #   guard: redirige a /?next= si no hay sesión
+│   │   └── board/[id]/page.tsx   #   lienzo 2×2 de un board (AtlasWorkspace)
+│   ├── share/[id]/page.tsx       # Board público de solo lectura (sin sesión)
+│   ├── admin/                    # Panel de administración (guard de rol admin)
+│   │   ├── page.tsx              #   inicio
+│   │   ├── users/page.tsx        #   usuarios y roles
+│   │   ├── metrics/page.tsx      #   edición del catálogo de métricas
+│   │   └── templates/page.tsx    #   plantillas de matriz
+│   └── api/metrics/route.ts      # GET público con el catálogo estático (JSON)
+│
+├── components/
+│   ├── landing/landing-page.tsx  # Landing pública (usuarios no autenticados)
+│   ├── auth/auth-modal.tsx       # Modal de login / registro
+│   ├── dashboard/                # MatrixDashboard (vista principal autenticada)
+│   ├── atlas/                    # Workspace del lienzo 2×2
+│   │   ├── atlas-workspace.tsx   #   orquestador del board
+│   │   ├── figjam-board.tsx      #   canvas arrastrable
+│   │   ├── board-page-client.tsx #   carga/persistencia del board
+│   │   ├── shared-board-client.tsx #  versión read-only para /share
+│   │   └── metrics-tray · matrix-axis-controls · metric-insight-panel
+│   ├── metric/                   # Biblioteca de métricas (EMBEBIDA, no es ruta)
+│   │   ├── metrics-library.tsx   #   filtros + grid de resultados (se usa dentro
+│   │   │                         #   de MatrixDashboard y AtlasWorkspace)
+│   │   ├── metric-detail.tsx · related-metrics · metric-badges
+│   ├── layout/filters-bar.tsx
+│   └── ui/                       # Primitivas (button, badge, separator) Radix + CVA
+│
 ├── lib/
-│   ├── firebase/client.ts   # Inicialización de Firebase (Auth + Firestore)
-│   ├── auth/                # AuthProvider, hooks de sesión (useAuth)
-│   ├── boards/              # Funciones CRUD Firestore + hook useBoards
-│   └── matrix-boards.ts     # Tipos puros y helpers (sin dependencias I/O)
-└── data/metrics.ts          # Catálogo estático (Source of Truth inicial)
+│   ├── firebase/client.ts        # init de Firebase + isFirebaseConfigured
+│   ├── auth/                      # AuthProvider + useAuth
+│   ├── boards/                    # CRUD Firestore de boards/spaces + useBoards
+│   ├── metrics/                   # MetricsProvider (suscripción a Firestore) + CRUD
+│   ├── templates/                 # TemplatesProvider + CRUD de plantillas
+│   ├── admin/                     # CRUD de roles/usuarios + useAdminGuard
+│   ├── types.ts                   # Metric, AtlasFilters, MatrixAxis…
+│   ├── matrix-boards.ts           # tipos y helpers de boards (sin I/O)
+│   ├── matrix-axes.ts             # metricMapPosition + definición de ejes
+│   ├── metric-layout.ts           # resolveMetricLayout (separación de solapes)
+│   ├── filters.ts                 # filterMetrics
+│   └── map-cluster · quadrant-viz · visual-encoding   # helpers de visualización
+│
+├── context/atlas-filters-context.tsx
+├── data/
+│   ├── metrics.ts                 # Catálogo semilla (servido por /api/metrics)
+│   ├── filters.ts                 # Definición de filtros disponibles
+│   └── legends.ts                 # Leyendas de la UI
+└── styles/globals.css             # Design System (variables HSL, theming light/dark)
 ```
 
-### Modelo de Datos (Firestore)
-La estructura de base de datos está segregada por usuario para garantizar privacidad y seguridad total en los *Boards* y *Spaces*:
-
-```json
-users/{uid}/boards/{boardId}
-users/{uid}/spaces/{spaceId}
-```
+> **Nota:** la biblioteca de métricas **no es una ruta propia** (`/metrics`): es un
+> componente (`metrics-library.tsx`) embebido tanto en `MatrixDashboard` como en
+> `AtlasWorkspace`.
 
 ---
 
-## 🚀 Guía de Instalación (Setup Local)
+## 🧬 Modelo de datos
 
-Sigue estos pasos para arrancar el entorno local de desarrollo.
+### Colecciones de Firestore
 
-### 1. Configuración en Firebase
-1. Ve a [Firebase Console](https://console.firebase.google.com).
-2. Activa **Authentication** habilitando `Email/Password` y `Google`.
-3. Activa **Firestore Database** en modo nativo.
-4. Obtén las credenciales web en **Project Settings**.
+```mermaid
+erDiagram
+  users ||--o{ boards : "users/{uid}/boards/{boardId}"
+  users ||--o{ spaces : "users/{uid}/spaces/{spaceId}"
+  boards }o--|| sharedBoards : "expone (read-only)"
+  metrics }o--o{ boards : "se colocan en"
 
-### 2. Variables de Entorno
-Copia el archivo de ejemplo para configurar tu `.env.local`:
+  users {
+    string uid
+  }
+  boards {
+    string id
+    string title
+    string spaceId
+    bool   starred
+    object axes "axisX / axisY"
+    array  placedMetrics
+  }
+  spaces {
+    string id
+    string name
+  }
+  sharedBoards {
+    string boardId
+    string ownerUid
+    bool   enabled
+  }
+  metrics {
+    string id
+    string name
+    string layer
+    string impactZone
+  }
+  templates {
+    string id
+    string name
+  }
+```
+
+| Colección | Ruta | Privacidad |
+| :--- | :--- | :--- |
+| Boards | `users/{uid}/boards/{boardId}` | Privada por usuario |
+| Spaces | `users/{uid}/spaces/{spaceId}` | Privada por usuario |
+| Boards compartidos | `sharedBoards/{boardId}` | Lectura pública si `enabled` |
+| Catálogo de métricas | `metrics/{id}` | Lectura global · escritura admin |
+| Plantillas de matriz | `templates/{id}` | Lectura global · escritura admin |
+| Perfiles / roles | `userProfiles/{uid}`, `admins/{uid}` | Gestión admin |
+
+> El catálogo **en tiempo de ejecución** vive en la colección `metrics` de Firestore
+> (lo edita un admin). El fichero `src/data/metrics.ts` es la **semilla** del catálogo
+> y lo que sirve el endpoint público `GET /api/metrics`.
+
+### La métrica (`Metric`)
+
+Cada métrica es una ficha rica (ver `src/lib/types.ts`). Campos clave:
+
+- **Clasificación:** `layer` (capa), `impactZone`, `measurementType`, `maturity`, `signalQuality`.
+- **Origen:** `sourcePrimary` / `sourceSecondary`, `figmaAvailability`.
+- **Flags:** `experimental`, `aiRelated`, `realtimePossible`, `archived`.
+- **Contenido:** `description`, `whyItMatters`, `howToMeasure[]`, `risksBiases[]`, `relatedMetricIds[]`, `dashboardIdeas[]`, `automationIdeas[]`.
+
+Cualquiera de estas variables puede usarse como **eje X o Y** de la matriz 2×2 (`MatrixAxisId`).
+
+---
+
+## 🎨 Design System
+
+UI construida con **Tailwind CSS + Radix UI**, con sistema dual **light/dark** basado en **variables HSL** definidas en `src/styles/globals.css`. Es obligatorio usar los **tokens semánticos** (`bg-background`, `text-foreground`, `bg-primary`…) y evitar hex hardcodeados.
+
+| Token | Light (Aero/Clean) | Dark (Deep/Gold) | Uso |
+| :--- | :--- | :--- | :--- |
+| **Background** | `210 20% 98%` | `220 16% 8%` | Fondo base |
+| **Foreground** | `0 0% 12%` | `45 20% 96%` | Texto primario |
+| **Primary / Accent** | `204 100% 53%` (azul) | `38 42% 58%` (oro) | CTAs, rings, highlights |
+| **Card** | `0 0% 100%` | `220 14% 11%` | Tarjetas y modales |
+| **Muted-foreground** | `0 0% 46%` | `220 10% 62%` | Texto secundario |
+| **Border** | `0 0% 90%` | `220 12% 20%` | Divisores e inputs |
+| **Radius** | `0.625rem` | `0.625rem` | Curvatura estándar |
+
+- **Tipografía:** Inter (sans) + JetBrains Mono (mono) vía `next/font`, con `optimizeLegibility` y *stylistic sets*.
+- **Componentes:** primitivas accesibles de Radix UI + `class-variance-authority` para variantes.
+
+---
+
+## 🚀 Puesta en marcha local
+
+### 1. Configurar Firebase
+1. Crea un proyecto en [Firebase Console](https://console.firebase.google.com).
+2. **Authentication** → habilita `Email/Password` y `Google`.
+3. **Firestore Database** → modo nativo.
+4. Copia las credenciales web desde *Configuración del proyecto → Tus apps*.
+
+### 2. Variables de entorno
 ```bash
 cp .env.example .env.local
 ```
-Completa las variables `NEXT_PUBLIC_FIREBASE_*` con los datos de tu proyecto. *(Nota: Sin este archivo, la ruta `/login` te avisará amigablemente del error).*
+Rellena las variables `NEXT_PUBLIC_FIREBASE_*` con los datos de tu proyecto.
 
-### 3. Instalación e Inicio
+> ⚠️ **Importante:** estas variables `NEXT_PUBLIC_*` son la **config web pública** de
+> Firebase (no son secretos: van al bundle del cliente por diseño). La seguridad real
+> la dan las reglas de Firestore y los dominios autorizados. Aun así, **sin ellas**
+> `isFirebaseConfigured` será `false` y la app solo mostrará la landing (sin auth ni
+> Firestore).
+
+### 3. Instalar y arrancar
 ```bash
 npm install
-npm run dev
+npm run dev          # http://localhost:3000
 ```
-La aplicación estará disponible en `http://localhost:3000`.
 
 ---
 
-## 🛡️ Despliegues & Seguridad
+## 🛡️ Seguridad y despliegue
 
-### Reglas de Seguridad (Firestore)
-Es crucial que ningún usuario pueda leer datos de otros. Despliega las reglas locales:
+### Reglas de Firestore
+La autorización vive en `firestore.rules` (cada usuario solo accede a `users/{uid}/...`). Despliégalas con:
 ```bash
 npm install -g firebase-tools
 firebase login
-firebase use --add        # Selecciona tu proyecto
+firebase use --add                      # selecciona tu proyecto
 firebase deploy --only firestore:rules
 ```
 
-### Hosting en Firebase App Hosting
-Aprovechamos el **SSR (Server-Side Rendering) nativo** de Next.js mediante Firebase App Hosting:
-1. Asegúrate de tener tu repo en GitHub.
-2. En Firebase Console, navega a **App Hosting** → *Get started* y enlaza tu repo.
-3. Configura las mismas variables de entorno `NEXT_PUBLIC_FIREBASE_*` en la consola. El archivo `apphosting.yaml` del repo orquestará el build.
-4. 🎉 **Cada push a la rama principal lanzará un despliegue automático.**
+### Firebase App Hosting (SSR)
+1. Sube el repo a GitHub.
+2. En Firebase Console → **App Hosting** → enlaza el repo.
+3. Define las variables `NEXT_PUBLIC_FIREBASE_*` del entorno. En el repo, `apphosting.yaml`
+   las declara con `value: ""`; **debes rellenarlas** (o inyectarlas como secrets del
+   backend) **antes de desplegar**, o la app arrancará sin auth ni Firestore.
+4. Cada push a la rama principal lanza un despliegue automático.
 
 ---
 
-## 🛠️ Comandos Útiles
+## 🛠️ Comandos
 
 | Comando | Descripción |
 | :--- | :--- |
-| `npm run dev` | Inicia el servidor de desarrollo en `localhost:3000`. |
-| `npm run build` | Construye la aplicación para producción. |
-| `npm run start` | Inicia el servidor de producción (post-build). |
-| `npm run lint` | Analiza el código con ESLint para mantener estándares. |
+| `npm run dev` | Servidor de desarrollo en `localhost:3000`. |
+| `npm run build` | Build de producción. |
+| `npm run start` | Servidor de producción (tras `build`). |
+| `npm run lint` | ESLint. |
+
+> Actualmente la validación se apoya en `lint` + `build` (aún no hay runner de tests configurado).
+
+---
+
+## 🧱 Stack
+
+**Next.js 15** · **React 19** · **TypeScript 5** · **Tailwind CSS 3** · **Radix UI** · **lucide-react** · **Firebase 12** (Auth + Firestore) · **Firebase App Hosting**.
 
 <br />
 
 <div align="center">
-  <i>Desarrollado con ❤️ combinando Diseño, Datos e IA.</i>
+  <i>Desarrollado combinando Diseño, Datos e IA.</i>
 </div>
