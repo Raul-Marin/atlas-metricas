@@ -13,7 +13,7 @@
 <br />
 
 <div align="center">
-  <img src="./preview-home.png" alt="Vista previa de Metric Atlas" width="860" />
+  <img src="./metric-atlas/preview-home.png" alt="Vista previa de Metric Atlas" width="860" />
   <p><sub>Workspace de Metric Atlas: catálogo de métricas + lienzo de matriz 2×2.</sub></p>
 </div>
 
@@ -82,6 +82,9 @@ flowchart TD
 ---
 
 ## 🗂️ Estructura del proyecto
+
+> La aplicación vive en el subdirectorio **`metric-atlas/`** del repositorio. El árbol
+> de abajo (y los comandos de instalación más adelante) son relativos a esa carpeta.
 
 ```text
 src/
@@ -244,6 +247,7 @@ UI construida con **Tailwind CSS + Radix UI**, con sistema dual **light/dark** b
 
 ### 2. Variables de entorno
 ```bash
+cd metric-atlas            # la app vive en este subdirectorio
 cp .env.example .env.local
 ```
 Rellena las variables `NEXT_PUBLIC_FIREBASE_*` con los datos de tu proyecto.
