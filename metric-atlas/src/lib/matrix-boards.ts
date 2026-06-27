@@ -1,4 +1,4 @@
-import type { AtlasFilters, MatrixAxesState } from "./types";
+import type { AtlasFilters, MatrixAxesState, MetricScoresMap } from "./types";
 import { defaultAtlasFilters } from "./filters";
 import { defaultMatrixAxes, normalizeAxes } from "./matrix-axes";
 
@@ -10,16 +10,40 @@ export const BOARD_COVER_IDS = [
 ] as const;
 export type BoardCoverId = (typeof BOARD_COVER_IDS)[number];
 
+/**
+ * Colores sólidos por cuadrante (orden TL, TR, BL, BR). Mismos tonos que los
+ * tintes históricos (indigo / naranja / teal / amarillo) pero más vivos y muy
+ * luminosos, para mantener legibles los textos de las fichas encima.
+ */
+export const DEFAULT_QUADRANT_COLORS: [string, string, string, string] = [
+  "#E8EAFE",
+  "#FEEAD8",
+  "#DAF7F0",
+  "#FCF3CD",
+];
+
+/** Normaliza un array de 4 colores hex; rellena con defaults lo que falte o sea inválido. */
+function sanitizeQuadrantColors(raw: unknown): [string, string, string, string] {
+  const isHex = (v: unknown): v is string =>
+    typeof v === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v);
+  const arr = Array.isArray(raw) ? raw : [];
+  return DEFAULT_QUADRANT_COLORS.map((fallback, i) =>
+    isHex(arr[i]) ? (arr[i] as string) : fallback,
+  ) as [string, string, string, string];
+}
+
 export interface MatrixBoardCanvasSettings {
   matrixAxes: MatrixAxesState;
   colorCardsByCategory: boolean;
   showMatrixQuadrantColors: boolean;
   mapClusterMode: boolean;
   filters: AtlasFilters;
-  /** Posiciones 0–1 fijadas a mano (id de métrica → centro de la ficha). */
-  metricManualPositions: Record<string, { x: number; y: number }>;
+  /** Valoraciones por métrica y dimensión (0–1), asignadas arrastrando. Por matriz. */
+  metricScores: MetricScoresMap;
   /** IDs de métricas eliminadas del canvas (Delete). Se pueden volver a añadir desde la lista lateral. */
   excludedMetricIds: string[];
+  /** Colores sólidos de los 4 cuadrantes (orden TL, TR, BL, BR). */
+  quadrantColors: [string, string, string, string];
 }
 
 export interface MatrixSpace {
@@ -45,13 +69,36 @@ export function defaultBoardCanvas(): MatrixBoardCanvasSettings {
     showMatrixQuadrantColors: true,
     mapClusterMode: false,
     filters: defaultAtlasFilters,
-    metricManualPositions: {},
+    metricScores: {},
     excludedMetricIds: [],
+    quadrantColors: [...DEFAULT_QUADRANT_COLORS] as [
+      string,
+      string,
+      string,
+      string,
+    ],
   };
 }
 
 export function defaultBoardCover(): BoardCoverId {
   return "summary";
+}
+
+/** Normaliza el mapa de valoraciones: solo entradas con valores numéricos válidos. */
+function sanitizeMetricScores(raw: unknown): MetricScoresMap {
+  if (!raw || typeof raw !== "object") return {};
+  const out: MetricScoresMap = {};
+  for (const [metricId, dims] of Object.entries(raw as Record<string, unknown>)) {
+    if (!dims || typeof dims !== "object") continue;
+    const clean: Record<string, number> = {};
+    for (const [dim, value] of Object.entries(dims as Record<string, unknown>)) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        clean[dim] = Math.min(1, Math.max(0, value));
+      }
+    }
+    if (Object.keys(clean).length > 0) out[metricId] = clean;
+  }
+  return out;
 }
 
 /** Limpia un board parcial garantizando shape consistente (para datos de Firestore o legacy). */
@@ -80,13 +127,11 @@ export function sanitizeBoard(raw: Partial<MatrixBoard> & { id: string }): Matri
           ? true
           : Boolean(canvasIn.showMatrixQuadrantColors),
       mapClusterMode: Boolean(canvasIn.mapClusterMode),
-      metricManualPositions:
-        canvasIn.metricManualPositions && typeof canvasIn.metricManualPositions === "object"
-          ? canvasIn.metricManualPositions
-          : {},
+      metricScores: sanitizeMetricScores(canvasIn.metricScores),
       excludedMetricIds: Array.isArray(canvasIn.excludedMetricIds)
         ? canvasIn.excludedMetricIds.filter((s): s is string => typeof s === "string")
         : [],
+      quadrantColors: sanitizeQuadrantColors(canvasIn.quadrantColors),
     },
   };
 }

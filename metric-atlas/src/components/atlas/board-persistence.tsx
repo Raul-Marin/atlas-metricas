@@ -15,8 +15,9 @@ export function BoardPersistence({ boardId }: { boardId: string }) {
     matrixAxes,
     colorCardsByCategory,
     showMatrixQuadrantColors,
+    quadrantColors,
     mapClusterMode,
-    metricManualPositions,
+    metricScores,
     excludedMetricIds,
   } = useAtlasFilters();
 
@@ -30,9 +31,10 @@ export function BoardPersistence({ boardId }: { boardId: string }) {
         matrixAxes,
         colorCardsByCategory,
         showMatrixQuadrantColors,
+        quadrantColors,
         mapClusterMode,
         filters,
-        metricManualPositions,
+        metricScores,
         excludedMetricIds,
       }).catch((err) => {
         console.error("[board-persistence] updateBoardCanvas", err);
@@ -48,8 +50,9 @@ export function BoardPersistence({ boardId }: { boardId: string }) {
     filters,
     mapClusterMode,
     matrixAxes,
-    metricManualPositions,
+    metricScores,
     showMatrixQuadrantColors,
+    quadrantColors,
     excludedMetricIds,
   ]);
 

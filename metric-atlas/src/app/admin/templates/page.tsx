@@ -396,8 +396,8 @@ function TemplateFormModal({
                 {draft.canvas.excludedMetricIds.length}
               </p>
               <p>
-                <span className="font-medium text-[#1e1e1e]">Posiciones manuales:</span>{" "}
-                {Object.keys(draft.canvas.metricManualPositions).length}
+                <span className="font-medium text-[#1e1e1e]">Valores asignados:</span>{" "}
+                {Object.keys(draft.canvas.metricScores).length}
               </p>
             </div>
           </fieldset>
@@ -562,7 +562,7 @@ export default function AdminTemplatesPage() {
                   </td>
                   <td className="hidden px-4 py-2.5 text-[11px] text-[#444] md:table-cell">
                     {t.canvas.excludedMetricIds.length} ·{" "}
-                    {Object.keys(t.canvas.metricManualPositions).length}
+                    {Object.keys(t.canvas.metricScores).length}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <div className="inline-flex items-center gap-1">

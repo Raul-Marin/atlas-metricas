@@ -12,6 +12,9 @@ import { getSharedBoard } from "@/lib/boards/firestore";
 import { useMetrics } from "@/lib/metrics/provider";
 import { FigJamBoard } from "./figjam-board";
 
+/** Vista compartida de solo lectura: nunca hay selección. */
+const EMPTY_SELECTION: Set<string> = new Set();
+
 type ViewState =
   | { kind: "loading" }
   | { kind: "missing" }
@@ -116,8 +119,9 @@ function SharedBoardCanvas({
       >
         <FigJamBoard
           metrics={visible}
-          selectedId={null}
+          selectedIds={EMPTY_SELECTION}
           onSelect={() => {}}
+          onClearSelection={() => {}}
         />
       </div>
     </div>

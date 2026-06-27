@@ -3,8 +3,17 @@
 import * as React from "react";
 import { useAtlasFilters } from "@/context/atlas-filters-context";
 import { MATRIX_AXIS_OPTIONS } from "@/lib/matrix-axes";
+import { DEFAULT_QUADRANT_COLORS } from "@/lib/matrix-boards";
 import type { MatrixAxisId } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+/** Etiquetas por posición de cuadrante (orden TL, TR, BL, BR). */
+const QUADRANT_LABELS = [
+  "Superior izquierda",
+  "Superior derecha",
+  "Inferior izquierda",
+  "Inferior derecha",
+] as const;
 
 export function MatrixAxisControls({
   className,
@@ -21,13 +30,19 @@ export function MatrixAxisControls({
     setColorCardsByCategory,
     showMatrixQuadrantColors,
     setShowMatrixQuadrantColors,
+    quadrantColors,
+    setQuadrantColor,
+    resetQuadrantColors,
     mapClusterMode,
     setMapClusterMode,
-    metricManualPositions,
-    clearMetricManualPositions,
+    metricScores,
+    clearMetricScores,
   } = useAtlasFilters();
 
-  const manualCount = Object.keys(metricManualPositions).length;
+  const manualCount = Object.keys(metricScores).length;
+  const quadrantsCustom = quadrantColors.some(
+    (c, i) => c.toLowerCase() !== DEFAULT_QUADRANT_COLORS[i].toLowerCase(),
+  );
 
   const setX = (axisX: MatrixAxisId) => {
     setMatrixAxes((a) => ({ ...a, axisX }));
@@ -149,11 +164,48 @@ export function MatrixAxisControls({
                     compact ? "text-[10px] leading-snug" : "text-[11px]",
                   )}
                 >
-                  Activado: cada cuadrante mantiene un tono suave. Desactivado: ves
-                  solo el `dot grid` continuo del canvas.
+                  Activado: cada cuadrante usa un color sólido editable. Desactivado:
+                  ves solo el `dot grid` continuo del canvas.
                 </span>
               </span>
             </label>
+
+            {showMatrixQuadrantColors ? (
+              <div className="mt-3">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-medium text-[#757575]">
+                    Color de cada cuadrante
+                  </span>
+                  {quadrantsCustom ? (
+                    <button
+                      type="button"
+                      onClick={resetQuadrantColors}
+                      className="text-[10px] text-[#757575] underline-offset-2 hover:text-[#1e1e1e] hover:underline"
+                    >
+                      Restablecer
+                    </button>
+                  ) : null}
+                </div>
+                <div className="grid max-w-[152px] grid-cols-2 grid-rows-2 gap-1.5">
+                  {quadrantColors.map((color, i) => (
+                    <label
+                      key={i}
+                      title={QUADRANT_LABELS[i]}
+                      className="relative block h-9 cursor-pointer overflow-hidden rounded-md border border-[#e0e0e0] shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-shadow hover:shadow-[0_0_0_2px_rgba(13,153,255,0.15)]"
+                      style={{ backgroundColor: color }}
+                    >
+                      <input
+                        type="color"
+                        value={color}
+                        onChange={(e) => setQuadrantColor(i, e.target.value)}
+                        aria-label={`Color del cuadrante ${QUADRANT_LABELS[i]}`}
+                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-3 border-t border-[#eeeeee] pt-3">
@@ -223,16 +275,16 @@ export function MatrixAxisControls({
                 compact ? "text-[10px] leading-snug" : "text-xs",
               )}
             >
-              Las fichas se colocan solas sin solapes. Si las mueves, se guarda la
-              posición en esta matrix.
+              Arrastra una ficha para asignarle su valor en los dos ejes activos.
+              Se guarda en esta matriz.
             </p>
             {manualCount > 0 ? (
               <button
                 type="button"
-                onClick={clearMetricManualPositions}
+                onClick={clearMetricScores}
                 className="text-[10px] font-medium text-[#626262] underline-offset-2 hover:text-[#0d99ff] hover:underline"
               >
-                Quitar posiciones manuales ({manualCount})
+                Quitar valores asignados ({manualCount})
               </button>
             ) : null}
           </div>

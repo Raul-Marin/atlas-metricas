@@ -5,9 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  ArrowUpDown,
   BookOpenText,
+  Check,
+  Copy,
   FileText,
   Folder,
+  FolderInput,
   Home,
   LayoutGrid,
   List,
@@ -19,6 +23,7 @@ import {
   Sparkles,
   Star,
   Trash2,
+  X,
 } from "lucide-react";
 import type { User } from "firebase/auth";
 import { Button } from "@/components/ui/button";
@@ -42,12 +47,23 @@ import {
   createBoard,
   createSpace,
   deleteBoard,
+  duplicateBoard,
   renameBoard,
+  renameSpace,
   setBoardSpace,
   toggleStarBoard,
 } from "@/lib/boards/firestore";
 import { useBoards } from "@/lib/boards/use-boards";
 import { useAuth } from "@/lib/auth/auth-provider";
+import { BoardThumbnailPreview } from "./board-thumbnail-preview";
+
+type SortMode = "recent" | "name" | "starred";
+
+const SORT_LABELS: Record<SortMode, string> = {
+  recent: "Más recientes",
+  name: "Nombre (A–Z)",
+  starred: "Destacadas primero",
+};
 
 /** Paleta de colores sólidos vivos para los thumbnails de boards. */
 const THUMB_PALETTE = [
@@ -139,10 +155,17 @@ export function MatrixDashboard() {
   const router = useRouter();
   const { user, signOutUser } = useAuth();
   const { boards, spaces, loading, error } = useBoards();
-  const [activeSpaceId, setActiveSpaceId] = React.useState<string>("all");
+  const [activeSpaceId, setActiveSpaceId] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
   const [view, setView] = React.useState<"grid" | "list">("grid");
+  const [sortMode, setSortMode] = React.useState<SortMode>("recent");
+  const [sortOpen, setSortOpen] = React.useState(false);
+  const [spaceMenuOpen, setSpaceMenuOpen] = React.useState(false);
+  const [editingSpaceId, setEditingSpaceId] = React.useState<string | null>(null);
+  const [spaceNameDraft, setSpaceNameDraft] = React.useState("");
+  const spaceNameInputRef = React.useRef<HTMLInputElement>(null);
   const [menuId, setMenuId] = React.useState<string | null>(null);
+  const [moveBoardId, setMoveBoardId] = React.useState<string | null>(null);
   const [userMenuOpen, setUserMenuOpen] = React.useState(false);
   const [spaceDraft, setSpaceDraft] = React.useState("");
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
@@ -158,11 +181,30 @@ export function MatrixDashboard() {
     if (tab !== "docs") setDocsMetric(null);
   }, [tab]);
 
+  // Espacio activo: siempre un workspace real. Si el actual deja de existir
+  // (o aún no hay), selecciona el por defecto ("Mi espacio") o el primero.
+  React.useEffect(() => {
+    if (spaces.length === 0) return;
+    if (activeSpaceId && spaces.some((s) => s.id === activeSpaceId)) return;
+    const fallback =
+      spaces.find((s) => s.name === "Mi espacio") ?? spaces[0];
+    setActiveSpaceId(fallback.id);
+  }, [spaces, activeSpaceId]);
+
   React.useEffect(() => {
     const close = (ev: MouseEvent) => {
-      const t = ev.target as HTMLElement;
-      if (!t.closest("[data-board-actions]")) setMenuId(null);
-      if (!t.closest("[data-user-menu]")) setUserMenuOpen(false);
+      // Usamos composedPath() (ruta fijada al inicio del dispatch) en vez de
+      // target.closest(): si un botón —p.ej. el lápiz— se desmonta durante el
+      // re-render del click, su nodo queda desconectado y closest() devolvería
+      // null, cerrando el menú por error. La ruta del evento sí conserva los
+      // ancestros originales.
+      const path = ev.composedPath();
+      const inPath = (selector: string) =>
+        path.some((n) => n instanceof Element && n.matches(selector));
+      if (!inPath("[data-board-actions]")) setMenuId(null);
+      if (!inPath("[data-user-menu]")) setUserMenuOpen(false);
+      if (!inPath("[data-sort-menu]")) setSortOpen(false);
+      if (!inPath("[data-space-menu]")) setSpaceMenuOpen(false);
     };
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
@@ -170,50 +212,42 @@ export function MatrixDashboard() {
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
-    let b = [...boards];
-    if (activeSpaceId !== "all") {
-      b = b.filter((x) => (activeSpaceId === "none" ? x.spaceId === null : x.spaceId === activeSpaceId));
-    }
+    let b = boards.filter((x) => x.spaceId === activeSpaceId);
     if (q) b = b.filter((x) => x.name.toLowerCase().includes(q));
+    // `boards` ya llega ordenado por updatedAt desc (más recientes primero).
+    if (sortMode === "name") {
+      b.sort((x, y) => x.name.localeCompare(y.name, "es", { sensitivity: "base" }));
+    } else if (sortMode === "starred") {
+      b.sort((x, y) => Number(y.starred) - Number(x.starred));
+    }
     return b;
-  }, [activeSpaceId, boards, query]);
+  }, [activeSpaceId, boards, query, sortMode]);
 
   const starred = React.useMemo(
     () =>
       boards
-        .filter((b) => b.starred)
-        .filter((b) =>
-          activeSpaceId === "all"
-            ? true
-            : activeSpaceId === "none"
-              ? b.spaceId === null
-              : b.spaceId === activeSpaceId,
-        )
+        .filter((b) => b.starred && b.spaceId === activeSpaceId)
         .slice(0, 8),
     [activeSpaceId, boards],
   );
 
-  const recent = React.useMemo(() => {
-    return [...boards]
-      .filter((b) =>
-        activeSpaceId === "all"
-          ? true
-          : activeSpaceId === "none"
-            ? b.spaceId === null
-            : b.spaceId === activeSpaceId,
-      )
-      .slice(0, 6);
-  }, [activeSpaceId, boards]);
+  const recent = React.useMemo(
+    () => boards.filter((b) => b.spaceId === activeSpaceId).slice(0, 6),
+    [activeSpaceId, boards],
+  );
 
   const goBoard = (id: string) => router.push(`/board/${id}`);
+
+  /** Espacio donde se crean las nuevas matrices: el activo, o el primero como respaldo. */
+  const targetSpaceId = activeSpaceId ?? spaces[0]?.id ?? null;
 
   const onCreateBlank = async () => {
     if (!user) return;
     const b = await createBoard(user.uid, "Matrix sin título", {
       excludedMetricIds: allMetrics.map((m) => m.id),
     });
-    if (activeSpaceId !== "all" && activeSpaceId !== "none") {
-      await setBoardSpace(user.uid, b.id, activeSpaceId);
+    if (targetSpaceId) {
+      await setBoardSpace(user.uid, b.id, targetSpaceId);
     }
     goBoard(b.id);
   };
@@ -221,8 +255,8 @@ export function MatrixDashboard() {
   const onTemplate = async (template: MatrixTemplate) => {
     if (!user) return;
     const board = await createBoard(user.uid, template.name, template.canvas);
-    if (activeSpaceId !== "all" && activeSpaceId !== "none") {
-      await setBoardSpace(user.uid, board.id, activeSpaceId);
+    if (targetSpaceId) {
+      await setBoardSpace(user.uid, board.id, targetSpaceId);
     }
     goBoard(board.id);
   };
@@ -237,11 +271,43 @@ export function MatrixDashboard() {
   const spaceName = (id: string | null) =>
     spaces.find((s) => s.id === id)?.name ?? "—";
 
+  const startEditSpace = (space: { id: string; name: string }) => {
+    setEditingSpaceId(space.id);
+    setSpaceNameDraft(space.name);
+    requestAnimationFrame(() => {
+      spaceNameInputRef.current?.focus();
+      spaceNameInputRef.current?.select();
+    });
+  };
+
+  const commitSpaceName = async () => {
+    if (!user || !editingSpaceId) return;
+    const id = editingSpaceId;
+    const next = spaceNameDraft.trim();
+    setEditingSpaceId(null);
+    setSpaceNameDraft("");
+    const current = spaces.find((s) => s.id === id);
+    if (!current || !next || next === current.name) return;
+    try {
+      await renameSpace(user.uid, id, next);
+    } catch (err) {
+      console.error("[matrix-dashboard] renameSpace", err);
+    }
+  };
+
+  const cancelEditSpace = () => {
+    setEditingSpaceId(null);
+    setSpaceNameDraft("");
+  };
+
   const moveBoardToSpace = async (boardId: string, spaceId: string | null) => {
     if (!user) return;
     await setBoardSpace(user.uid, boardId, spaceId);
     setMenuId(null);
+    setMoveBoardId(null);
   };
+
+  const moveBoard = boards.find((b) => b.id === moveBoardId) ?? null;
 
   const onToggleStar = async (board: MatrixBoard) => {
     if (!user) return;
@@ -252,6 +318,17 @@ export function MatrixDashboard() {
     if (!user) return;
     await deleteBoard(user.uid, board.id);
     setMenuId(null);
+  };
+
+  const onDuplicateBoard = async (board: MatrixBoard) => {
+    if (!user) return;
+    setMenuId(null);
+    try {
+      const copy = await duplicateBoard(user.uid, board);
+      goBoard(copy.id);
+    } catch (err) {
+      console.error("[matrix-dashboard] duplicateBoard", err);
+    }
   };
 
   const startRename = (board: MatrixBoard) => {
@@ -405,6 +482,118 @@ export function MatrixDashboard() {
           </>
         ) : (
           <>
+        <div className="border-t border-[#f0f0f0] px-3 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-[#949494]">
+              Espacio de trabajo
+            </span>
+          </div>
+          <div className="relative" data-space-menu>
+            <button
+              type="button"
+              onClick={() => setSpaceMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={spaceMenuOpen}
+              className="flex w-full items-center gap-2 rounded-md border border-[#e6e6e6] bg-white px-2 py-1.5 text-[11px] text-[#1e1e1e] transition-colors hover:bg-[#fafafa] focus:border-[#0d99ff] focus:outline-none focus:ring-2 focus:ring-[#0d99ff]/15"
+            >
+              <Folder className="h-3.5 w-3.5 shrink-0 text-[#949494]" />
+              <span className="flex-1 truncate text-left">
+                {spaces.find((s) => s.id === activeSpaceId)?.name ?? "Mi espacio"}
+              </span>
+              <span className="ml-auto text-[10px] text-[#949494]">{spaceMenuOpen ? "▴" : "▾"}</span>
+            </button>
+            {spaceMenuOpen ? (
+              <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 rounded-lg border border-[#e6e6e6] bg-white p-1.5 shadow-lg">
+                <div className="mb-1.5 flex gap-1">
+                  <input
+                    value={spaceDraft}
+                    onChange={(e) => setSpaceDraft(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addSpace()}
+                    placeholder="Nuevo espacio"
+                    className="min-w-0 flex-1 rounded border border-[#e6e6e6] px-2 py-1 text-[11px] outline-none focus:border-[#0d99ff]"
+                  />
+                  <Button type="button" size="sm" variant="outline" className="h-7 px-2" onClick={addSpace}>
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <ul className="max-h-[200px] space-y-0.5 overflow-y-auto">
+                  {spaces.map((s) => (
+                    <li key={s.id}>
+                      {editingSpaceId === s.id ? (
+                        // Aísla la fila en edición: interactuar con el input
+                        // (clic, seleccionar texto) no debe cerrar el selector.
+                        // El cierre real (clic fuera) confirma vía onBlur.
+                        <div
+                          className="flex items-center gap-2 rounded px-1.5 py-1"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Folder className="h-3.5 w-3.5 shrink-0 text-[#0d99ff]" />
+                          <input
+                            ref={spaceNameInputRef}
+                            type="text"
+                            value={spaceNameDraft}
+                            onChange={(e) => setSpaceNameDraft(e.target.value)}
+                            onBlur={() => {
+                              void commitSpaceName();
+                            }}
+                            onKeyDown={(e) => {
+                              e.stopPropagation();
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                (e.target as HTMLInputElement).blur();
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                cancelEditSpace();
+                              }
+                            }}
+                            className="min-w-0 flex-1 rounded border border-[#0d99ff] bg-white px-1 py-0.5 text-[11px] text-[#1e1e1e] outline-none focus:ring-2 focus:ring-[#0d99ff]/20"
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className={cn(
+                            "group/space flex items-center gap-2 rounded px-1.5 py-1 text-[11px] transition-colors",
+                            activeSpaceId === s.id
+                              ? "bg-[#f0f7ff] text-[#0d99ff]"
+                              : "text-[#626262] hover:bg-[#f7f7f7]",
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveSpaceId(s.id);
+                              setSpaceMenuOpen(false);
+                            }}
+                            className="flex min-w-0 flex-1 items-center gap-2 truncate text-left"
+                          >
+                            <Folder className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{s.name}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              // El re-render desmonta este botón; si el clic llega al
+                              // listener global, `closest` corre sobre un nodo ya
+                              // desconectado y cerraría el selector. Lo cortamos aquí.
+                              e.stopPropagation();
+                              startEditSpace(s);
+                            }}
+                            aria-label={`Editar nombre de ${s.name}`}
+                            className="shrink-0 rounded p-0.5 text-[#949494] opacity-0 transition-opacity hover:bg-[#e9eef5] hover:text-[#0d99ff] group-hover/space:opacity-100"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                          <span className="shrink-0 text-[10px] opacity-70">{boardsInSpace(s.id)}</span>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </div>
         <div className="px-3 py-2">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#949494]">
             Recientes
@@ -436,85 +625,13 @@ export function MatrixDashboard() {
                   <button
                     type="button"
                     onClick={() => goBoard(b.id)}
-                    className="flex w-full items-center gap-1 truncate rounded px-1.5 py-1 text-left text-[11px] text-[#626262] hover:bg-[#f7f7f7]"
+                    className="w-full truncate rounded px-1.5 py-1 text-left text-[11px] text-[#626262] hover:bg-[#f7f7f7]"
                   >
-                    <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />
                     {b.name}
                   </button>
                 </li>
               ))
             )}
-          </ul>
-        </div>
-        <div className="mt-auto border-t border-[#f0f0f0] px-3 py-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-[#949494]">
-              Espacios
-            </span>
-          </div>
-          <div className="mb-2 flex gap-1">
-            <input
-              value={spaceDraft}
-              onChange={(e) => setSpaceDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addSpace()}
-              placeholder="Nuevo espacio"
-              className="min-w-0 flex-1 rounded border border-[#e6e6e6] px-2 py-1 text-[11px] outline-none focus:border-[#0d99ff]"
-            />
-            <Button type="button" size="sm" variant="outline" className="h-7 px-2" onClick={addSpace}>
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <ul className="max-h-[160px] space-y-0.5 overflow-y-auto">
-            <li>
-              <button
-                type="button"
-                onClick={() => setActiveSpaceId("all")}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[11px] transition-colors",
-                  activeSpaceId === "all"
-                    ? "bg-[#f0f7ff] text-[#0d99ff]"
-                    : "text-[#626262] hover:bg-[#f7f7f7]",
-                )}
-              >
-                <Folder className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Todos</span>
-                <span className="ml-auto text-[10px] opacity-70">{boards.length}</span>
-              </button>
-            </li>
-            <li>
-              <button
-                type="button"
-                onClick={() => setActiveSpaceId("none")}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[11px] transition-colors",
-                  activeSpaceId === "none"
-                    ? "bg-[#f0f7ff] text-[#0d99ff]"
-                    : "text-[#626262] hover:bg-[#f7f7f7]",
-                )}
-              >
-                <Folder className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Sin espacio</span>
-                <span className="ml-auto text-[10px] opacity-70">{boardsInSpace(null)}</span>
-              </button>
-            </li>
-            {spaces.map((s) => (
-              <li key={s.id}>
-                <button
-                  type="button"
-                  onClick={() => setActiveSpaceId(s.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2 truncate rounded px-1.5 py-1 text-left text-[11px] transition-colors",
-                    activeSpaceId === s.id
-                      ? "bg-[#f0f7ff] text-[#0d99ff]"
-                      : "text-[#626262] hover:bg-[#f7f7f7]",
-                  )}
-                >
-                  <Folder className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{s.name}</span>
-                  <span className="ml-auto text-[10px] opacity-70">{boardsInSpace(s.id)}</span>
-                </button>
-              </li>
-            ))}
           </ul>
         </div>
           </>
@@ -608,9 +725,11 @@ export function MatrixDashboard() {
                     <span className="line-clamp-1 text-[12px] font-semibold leading-tight tracking-[-0.01em]">
                       {template.name}
                     </span>
-                    <span className="mt-1 line-clamp-2 flex items-center gap-1.5 text-[10px] leading-tight text-[#757575]">
+                    <span className="mt-1 flex items-center gap-1.5 text-[10px] leading-tight text-[#757575]">
                       <Sparkles className="h-3 w-3 shrink-0 text-violet-500" />
-                      {template.description ?? "Plantilla guardada"}
+                      <span className="truncate">
+                        {template.description ?? "Plantilla guardada"}
+                      </span>
                     </span>
                   </div>
                 </button>
@@ -621,16 +740,45 @@ export function MatrixDashboard() {
           <section>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#1e1e1e]">
-                {activeSpaceId === "all"
-                  ? "Tus matrices"
-                  : activeSpaceId === "none"
-                    ? "Matrices sin espacio"
-                    : spaces.find((s) => s.id === activeSpaceId)?.name ?? "Tus matrices"}
+                {spaces.find((s) => s.id === activeSpaceId)?.name ?? "Tus matrices"}
               </h2>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-[#757575]">
                   {filtered.length} {filtered.length === 1 ? "tablero" : "tableros"}
                 </span>
+                <div className="relative" data-sort-menu>
+                  <button
+                    type="button"
+                    onClick={() => setSortOpen((v) => !v)}
+                    aria-haspopup="menu"
+                    aria-expanded={sortOpen}
+                    className="flex items-center gap-1.5 rounded-lg border border-[#e6e6e6] bg-white px-2.5 py-1.5 text-xs font-medium text-[#444] transition-colors hover:bg-[#f7f7f7]"
+                  >
+                    <ArrowUpDown className="h-3.5 w-3.5 text-[#949494]" />
+                    <span className="hidden sm:inline">{SORT_LABELS[sortMode]}</span>
+                  </button>
+                  {sortOpen ? (
+                    <div className="absolute right-0 top-[calc(100%+4px)] z-20 min-w-[170px] rounded-lg border border-[#e6e6e6] bg-white py-1 shadow-lg">
+                      {(Object.keys(SORT_LABELS) as SortMode[]).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => {
+                            setSortMode(mode);
+                            setSortOpen(false);
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]",
+                            sortMode === mode ? "text-[#0d99ff]" : "text-[#1e1e1e]",
+                          )}
+                        >
+                          {SORT_LABELS[mode]}
+                          {sortMode === mode ? <span className="text-[#0d99ff]">✓</span> : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
                 <div className="flex rounded-lg border border-[#e6e6e6] bg-white p-0.5">
                   <button
                     type="button"
@@ -673,7 +821,12 @@ export function MatrixDashboard() {
                   >
                     {renamingId === b.id ? (
                       <div className="block">
-                        <BoardThumbnail board={b} className="aspect-[16/10] w-full" />
+                        <BoardThumbnailPreview
+                          board={b}
+                          metrics={allMetrics}
+                          fallbackColor={thumbColor(b.id)}
+                          className="aspect-[16/10] w-full"
+                        />
                         <div className="p-3">
                           <input
                             ref={renameInputRef}
@@ -708,7 +861,12 @@ export function MatrixDashboard() {
                       </div>
                     ) : (
                       <Link href={`/board/${b.id}`} className="block">
-                        <BoardThumbnail board={b} className="aspect-[16/10] w-full" />
+                        <BoardThumbnailPreview
+                          board={b}
+                          metrics={allMetrics}
+                          fallbackColor={thumbColor(b.id)}
+                          className="aspect-[16/10] w-full"
+                        />
                         <div className="p-3">
                           <p className="line-clamp-1 text-[12px] font-medium leading-[1.3] tracking-[-0.01em] text-[#1e1e1e]">
                             {b.name}
@@ -785,28 +943,25 @@ export function MatrixDashboard() {
                           <Pencil className="h-3.5 w-3.5" />
                           Renombrar
                         </button>
-                        <div className="px-3 py-2">
-                          <label className="mb-1 block text-[10px] font-medium uppercase tracking-[0.08em] text-[#949494]">
-                            Mover a workspace
-                          </label>
-                          <select
-                            value={b.spaceId ?? "none"}
-                            onChange={(e) =>
-                              moveBoardToSpace(
-                                b.id,
-                                e.target.value === "none" ? null : e.target.value,
-                              )
-                            }
-                            className="w-full rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-[#444] outline-none focus:border-[#0d99ff]"
-                          >
-                            <option value="none">Sin espacio</option>
-                            {spaces.map((space) => (
-                              <option key={space.id} value={space.id}>
-                                {space.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]"
+                          onClick={() => onDuplicateBoard(b)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Duplicar
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]"
+                          onClick={() => {
+                            setMoveBoardId(b.id);
+                            setMenuId(null);
+                          }}
+                        >
+                          <FolderInput className="h-3.5 w-3.5" />
+                          Mover a…
+                        </button>
                         <button
                           type="button"
                           className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]"
@@ -905,28 +1060,17 @@ export function MatrixDashboard() {
                                 <Pencil className="h-3.5 w-3.5" />
                                 Renombrar
                               </button>
-                              <div className="px-3 py-2">
-                                <label className="mb-1 block text-[10px] font-medium uppercase tracking-[0.08em] text-[#949494]">
-                                  Mover a workspace
-                                </label>
-                                <select
-                                  value={b.spaceId ?? "none"}
-                                  onChange={(e) =>
-                                    moveBoardToSpace(
-                                      b.id,
-                                      e.target.value === "none" ? null : e.target.value,
-                                    )
-                                  }
-                                  className="w-full rounded-md border border-[#e6e6e6] bg-white px-2 py-1 text-xs text-[#444] outline-none focus:border-[#0d99ff]"
-                                >
-                                  <option value="none">Sin espacio</option>
-                                  {spaces.map((space) => (
-                                    <option key={space.id} value={space.id}>
-                                      {space.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]"
+                                onClick={() => {
+                                  setMoveBoardId(b.id);
+                                  setMenuId(null);
+                                }}
+                              >
+                                <FolderInput className="h-3.5 w-3.5" />
+                                Mover a…
+                              </button>
                               <button
                                 type="button"
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]"
@@ -966,6 +1110,61 @@ export function MatrixDashboard() {
         )}
         </div>
       </main>
+
+      {moveBoard ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Mover matriz a un espacio"
+          onClick={() => setMoveBoardId(null)}
+        >
+          <div
+            className="w-full max-w-[320px] overflow-hidden rounded-xl border border-[#e6e6e6] bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2 border-b border-[#f0f0f0] px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold tracking-[-0.01em] text-[#1e1e1e]">
+                  Mover a espacio
+                </p>
+                <p className="truncate text-[11px] text-[#949494]">{moveBoard.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMoveBoardId(null)}
+                aria-label="Cerrar"
+                className="shrink-0 rounded-md p-1 text-[#757575] transition-colors hover:bg-[#f5f5f5] hover:text-[#1e1e1e]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <ul className="max-h-[300px] overflow-y-auto p-1.5">
+              {spaces.map((s) => (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => moveBoardToSpace(moveBoard.id, s.id)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]",
+                      moveBoard.spaceId === s.id ? "text-[#0d99ff]" : "text-[#1e1e1e]",
+                    )}
+                  >
+                    <Folder className="h-3.5 w-3.5 shrink-0 text-[#949494]" />
+                    <span className="flex-1 truncate">{s.name}</span>
+                    {moveBoard.spaceId === s.id ? <Check className="h-3.5 w-3.5" /> : null}
+                  </button>
+                </li>
+              ))}
+              {spaces.length === 0 ? (
+                <li className="px-2.5 py-2 text-[11px] text-[#949494]">
+                  No hay espacios creados. Crea uno desde el panel lateral.
+                </li>
+              ) : null}
+            </ul>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

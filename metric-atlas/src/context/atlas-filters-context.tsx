@@ -1,12 +1,21 @@
 "use client";
 
 import * as React from "react";
-import type { AtlasFilters, MatrixAxesState } from "@/lib/types";
+import type {
+  AtlasFilters,
+  MatrixAxesState,
+  MetricScoresMap,
+} from "@/lib/types";
 import { defaultAtlasFilters } from "@/lib/filters";
 import { defaultMatrixAxes, normalizeAxes } from "@/lib/matrix-axes";
 import type { MatrixBoardCanvasSettings } from "@/lib/matrix-boards";
-import { defaultBoardCanvas } from "@/lib/matrix-boards";
-import type { ManualPositionsMap } from "@/lib/metric-layout";
+import { defaultBoardCanvas, DEFAULT_QUADRANT_COLORS } from "@/lib/matrix-boards";
+
+type QuadrantColors = [string, string, string, string];
+
+/** Una posición en el lienzo (0–1) que, al asignarse, escribe los valores de
+ *  los dos ejes activos en esa dimensión. */
+export type PositionedMetric = { id: string; pos: { x: number; y: number } };
 
 type AtlasFiltersContextValue = {
   filters: AtlasFilters;
@@ -19,16 +28,40 @@ type AtlasFiltersContextValue = {
   setColorCardsByCategory: React.Dispatch<React.SetStateAction<boolean>>;
   showMatrixQuadrantColors: boolean;
   setShowMatrixQuadrantColors: React.Dispatch<React.SetStateAction<boolean>>;
+  quadrantColors: QuadrantColors;
+  setQuadrantColor: (index: number, color: string) => void;
+  resetQuadrantColors: () => void;
   mapClusterMode: boolean;
   setMapClusterMode: React.Dispatch<React.SetStateAction<boolean>>;
-  metricManualPositions: ManualPositionsMap;
-  setMetricManualPosition: (metricId: string, pos: { x: number; y: number }) => void;
-  clearMetricManualPositions: () => void;
+  /** Valoraciones por métrica y dimensión (0–1). La posición sale de aquí. */
+  metricScores: MetricScoresMap;
+  /** Asigna el valor de una ficha en los dos ejes activos (arrastrar). */
+  setMetricPosition: (metricId: string, pos: { x: number; y: number }) => void;
+  /** Reposiciona varias fichas (arrastre en grupo) en un solo paso de historial. */
+  moveMetrics: (entries: PositionedMetric[]) => void;
+  /** Borra todas las valoraciones asignadas en esta matriz. */
+  clearMetricScores: () => void;
   excludedMetricIds: string[];
   excludeMetric: (metricId: string) => void;
+  /** Saca varias fichas del lienzo (Delete múltiple). */
+  excludeMetrics: (metricIds: string[]) => void;
   includeMetric: (metricId: string) => void;
+  /** Reincluye una ficha asignándole una posición (los dos ejes activos), en un paso. */
+  includeMetricAt: (metricId: string, pos: { x: number; y: number }) => void;
   clearExcludedMetrics: () => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 };
+
+/** Estado del canvas que participa en el historial undo/redo. */
+type CanvasUndoState = {
+  scores: MetricScoresMap;
+  excluded: string[];
+};
+
+const HISTORY_LIMIT = 80;
 
 const AtlasFiltersContext = React.createContext<
   AtlasFiltersContextValue | undefined
@@ -41,8 +74,9 @@ function buildInitialState(initialCanvas?: MatrixBoardCanvasSettings | null) {
     matrixAxes: normalizeAxes(c.matrixAxes),
     colorCardsByCategory: c.colorCardsByCategory,
     showMatrixQuadrantColors: c.showMatrixQuadrantColors,
+    quadrantColors: (c.quadrantColors ?? DEFAULT_QUADRANT_COLORS) as QuadrantColors,
     mapClusterMode: c.mapClusterMode,
-    metricManualPositions: c.metricManualPositions ?? {},
+    metricScores: c.metricScores ?? {},
     excludedMetricIds: c.excludedMetricIds ?? [],
   };
 }
@@ -64,13 +98,50 @@ export function AtlasFiltersProvider({
   const [showMatrixQuadrantColors, setShowMatrixQuadrantColors] = React.useState(
     init.showMatrixQuadrantColors,
   );
-  const [mapClusterMode, setMapClusterMode] = React.useState(init.mapClusterMode);
-  const [metricManualPositions, setMetricManualPositions] = React.useState<
-    ManualPositionsMap
-  >(init.metricManualPositions);
-  const [excludedMetricIds, setExcludedMetricIds] = React.useState<string[]>(
-    init.excludedMetricIds,
+  const [quadrantColors, setQuadrantColors] = React.useState<QuadrantColors>(
+    init.quadrantColors,
   );
+  const [mapClusterMode, setMapClusterMode] = React.useState(init.mapClusterMode);
+
+  // ── Estado del canvas con historial (undo/redo) ──
+  const [present, setPresent] = React.useState<CanvasUndoState>({
+    scores: init.metricScores,
+    excluded: init.excludedMetricIds,
+  });
+  const [past, setPast] = React.useState<CanvasUndoState[]>([]);
+  const [future, setFuture] = React.useState<CanvasUndoState[]>([]);
+  const presentRef = React.useRef(present);
+  presentRef.current = present;
+  // Los ejes activos en el momento de asignar (para escribir el valor en la dimensión correcta).
+  const axesRef = React.useRef(matrixAxes);
+  axesRef.current = matrixAxes;
+
+  const metricScores = present.scores;
+  const excludedMetricIds = present.excluded;
+
+  /** Escribe el valor de una ficha en los dos ejes activos. */
+  const writeScores = React.useCallback(
+    (scores: MetricScoresMap, metricId: string, pos: { x: number; y: number }) => {
+      const { axisX, axisY } = axesRef.current;
+      return {
+        ...scores,
+        [metricId]: { ...scores[metricId], [axisX]: pos.x, [axisY]: pos.y },
+      };
+    },
+    [],
+  );
+
+  /** Aplica un nuevo estado al canvas y registra el anterior en el historial. */
+  const commit = React.useCallback((next: CanvasUndoState) => {
+    const prev = presentRef.current;
+    presentRef.current = next;
+    setPast((p) => {
+      const np = [...p, prev];
+      return np.length > HISTORY_LIMIT ? np.slice(np.length - HISTORY_LIMIT) : np;
+    });
+    setFuture([]);
+    setPresent(next);
+  }, []);
 
   const setMatrixAxes = React.useCallback(
     (action: React.SetStateAction<MatrixAxesState>) => {
@@ -90,33 +161,117 @@ export function AtlasFiltersProvider({
     setMatrixAxesRaw(normalizeAxes(defaultMatrixAxes));
   }, []);
 
-  const setMetricManualPosition = React.useCallback(
+  const setQuadrantColor = React.useCallback((index: number, color: string) => {
+    setQuadrantColors((prev) => {
+      if (index < 0 || index > 3 || prev[index] === color) return prev;
+      const next = [...prev] as QuadrantColors;
+      next[index] = color;
+      return next;
+    });
+  }, []);
+
+  const resetQuadrantColors = React.useCallback(() => {
+    setQuadrantColors([...DEFAULT_QUADRANT_COLORS] as QuadrantColors);
+  }, []);
+
+  const setMetricPosition = React.useCallback(
     (metricId: string, pos: { x: number; y: number }) => {
-      setMetricManualPositions((prev) => ({
-        ...prev,
-        [metricId]: { x: pos.x, y: pos.y },
-      }));
+      const cur = presentRef.current;
+      commit({ ...cur, scores: writeScores(cur.scores, metricId, pos) });
     },
-    [],
+    [commit, writeScores],
   );
 
-  const clearMetricManualPositions = React.useCallback(() => {
-    setMetricManualPositions({});
-  }, []);
+  const moveMetrics = React.useCallback(
+    (entries: PositionedMetric[]) => {
+      if (entries.length === 0) return;
+      const cur = presentRef.current;
+      let scores = cur.scores;
+      for (const e of entries) scores = writeScores(scores, e.id, e.pos);
+      commit({ ...cur, scores });
+    },
+    [commit, writeScores],
+  );
 
-  const excludeMetric = React.useCallback((metricId: string) => {
-    setExcludedMetricIds((prev) =>
-      prev.includes(metricId) ? prev : [...prev, metricId],
-    );
-  }, []);
+  const clearMetricScores = React.useCallback(() => {
+    const cur = presentRef.current;
+    if (Object.keys(cur.scores).length === 0) return;
+    commit({ ...cur, scores: {} });
+  }, [commit]);
 
-  const includeMetric = React.useCallback((metricId: string) => {
-    setExcludedMetricIds((prev) => prev.filter((id) => id !== metricId));
-  }, []);
+  const excludeMetric = React.useCallback(
+    (metricId: string) => {
+      const cur = presentRef.current;
+      if (cur.excluded.includes(metricId)) return;
+      commit({ ...cur, excluded: [...cur.excluded, metricId] });
+    },
+    [commit],
+  );
+
+  const excludeMetrics = React.useCallback(
+    (metricIds: string[]) => {
+      if (metricIds.length === 0) return;
+      const cur = presentRef.current;
+      const excluded = new Set(cur.excluded);
+      let changed = false;
+      for (const id of metricIds) {
+        if (!excluded.has(id)) {
+          excluded.add(id);
+          changed = true;
+        }
+      }
+      if (!changed) return;
+      commit({ ...cur, excluded: [...excluded] });
+    },
+    [commit],
+  );
+
+  const includeMetric = React.useCallback(
+    (metricId: string) => {
+      const cur = presentRef.current;
+      if (!cur.excluded.includes(metricId)) return;
+      commit({ ...cur, excluded: cur.excluded.filter((id) => id !== metricId) });
+    },
+    [commit],
+  );
+
+  const includeMetricAt = React.useCallback(
+    (metricId: string, pos: { x: number; y: number }) => {
+      const cur = presentRef.current;
+      commit({
+        scores: writeScores(cur.scores, metricId, pos),
+        excluded: cur.excluded.filter((id) => id !== metricId),
+      });
+    },
+    [commit, writeScores],
+  );
 
   const clearExcludedMetrics = React.useCallback(() => {
-    setExcludedMetricIds([]);
-  }, []);
+    const cur = presentRef.current;
+    if (cur.excluded.length === 0) return;
+    commit({ ...cur, excluded: [] });
+  }, [commit]);
+
+  const undo = React.useCallback(() => {
+    if (past.length === 0) return;
+    const prev = past[past.length - 1]!;
+    presentRef.current = prev;
+    setPast(past.slice(0, -1));
+    setFuture((f) => [present, ...f]);
+    setPresent(prev);
+  }, [past, present]);
+
+  const redo = React.useCallback(() => {
+    if (future.length === 0) return;
+    const next = future[0]!;
+    presentRef.current = next;
+    setFuture(future.slice(1));
+    setPast((p) => [...p, present]);
+    setPresent(next);
+  }, [future, present]);
+
+  const canUndo = past.length > 0;
+  const canRedo = future.length > 0;
 
   const value = React.useMemo(
     () => ({
@@ -130,35 +285,55 @@ export function AtlasFiltersProvider({
       setColorCardsByCategory,
       showMatrixQuadrantColors,
       setShowMatrixQuadrantColors,
+      quadrantColors,
+      setQuadrantColor,
+      resetQuadrantColors,
       mapClusterMode,
       setMapClusterMode,
-      metricManualPositions,
-      setMetricManualPosition,
-      clearMetricManualPositions,
+      metricScores,
+      setMetricPosition,
+      moveMetrics,
+      clearMetricScores,
       excludedMetricIds,
       excludeMetric,
+      excludeMetrics,
       includeMetric,
+      includeMetricAt,
       clearExcludedMetrics,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
     }),
     [
       colorCardsByCategory,
       filters,
       mapClusterMode,
       matrixAxes,
-      metricManualPositions,
+      metricScores,
       resetFilters,
       resetMatrixAxes,
       setColorCardsByCategory,
       setMapClusterMode,
       setMatrixAxes,
-      setMetricManualPosition,
+      setMetricPosition,
+      moveMetrics,
       setShowMatrixQuadrantColors,
       showMatrixQuadrantColors,
-      clearMetricManualPositions,
+      quadrantColors,
+      setQuadrantColor,
+      resetQuadrantColors,
+      clearMetricScores,
       excludedMetricIds,
       excludeMetric,
+      excludeMetrics,
       includeMetric,
+      includeMetricAt,
       clearExcludedMetrics,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
     ],
   );
 

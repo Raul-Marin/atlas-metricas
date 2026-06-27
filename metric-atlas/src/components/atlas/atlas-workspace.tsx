@@ -2,7 +2,21 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, ChevronLeft, Copy, Share2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronLeft,
+  Copy,
+  Download,
+  FileImage,
+  FileText,
+  Loader2,
+  Redo2,
+  Share2,
+  Table2,
+  Undo2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   disableShare,
@@ -12,7 +26,6 @@ import {
 } from "@/lib/boards/firestore";
 import type { Metric } from "@/lib/types";
 import { filterMetrics } from "@/lib/filters";
-import { metricMapPosition } from "@/lib/matrix-axes";
 import { useAtlasFilters } from "@/context/atlas-filters-context";
 import { FiltersBar } from "@/components/layout/filters-bar";
 import { FigJamBoard, type FigJamBoardHandle } from "./figjam-board";
@@ -42,11 +55,13 @@ export function AtlasWorkspace({
   const {
     filters,
     excludedMetricIds,
-    excludeMetric,
+    excludeMetrics,
     includeMetric,
-    matrixAxes,
-    metricManualPositions,
-    setMetricManualPosition,
+    includeMetricAt,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   } = useAtlasFilters();
   const { user } = useAuth();
   const visible = React.useMemo(
@@ -61,7 +76,13 @@ export function AtlasWorkspace({
     () => visible.filter((m) => !m.archived),
     [visible],
   );
-  const [selected, setSelected] = React.useState<Metric | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [primaryId, setPrimaryId] = React.useState<string | null>(null);
+  const selectedIdSet = React.useMemo(() => new Set(selectedIds), [selectedIds]);
+  const primary = React.useMemo(
+    () => canvasMetrics.find((m) => m.id === primaryId) ?? null,
+    [canvasMetrics, primaryId],
+  );
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [docsOpen, setDocsOpen] = React.useState(false);
   const [docsMetric, setDocsMetric] = React.useState<Metric | null>(null);
@@ -71,7 +92,49 @@ export function AtlasWorkspace({
   const [shareOpen, setShareOpen] = React.useState(false);
   const [shareState, setShareState] = React.useState<ShareState | null>(null);
   const [title, setTitle] = React.useState(initialTitle ?? "Metric Atlas");
+  const [exportOpen, setExportOpen] = React.useState(false);
+  const [exporting, setExporting] = React.useState<null | "png" | "pdf">(null);
+  const [dataTableOpen, setDataTableOpen] = React.useState(false);
   const figjamRef = React.useRef<FigJamBoardHandle | null>(null);
+
+  const handleExport = React.useCallback(
+    async (format: "png" | "pdf") => {
+      setExportOpen(false);
+      if (exporting) return;
+      setExporting(format);
+      try {
+        const dataUrl = await figjamRef.current?.exportImage();
+        if (!dataUrl) return;
+        const safe =
+          title.replace(/[^\p{L}\p{N}\-_ ]/gu, "").trim() || "matrix";
+        if (format === "png") {
+          const a = document.createElement("a");
+          a.href = dataUrl;
+          a.download = `${safe}.png`;
+          a.click();
+        } else {
+          const { jsPDF } = await import("jspdf");
+          const img = new Image();
+          img.src = dataUrl;
+          await img.decode();
+          const orientation =
+            img.width >= img.height ? "landscape" : "portrait";
+          const pdf = new jsPDF({
+            orientation,
+            unit: "px",
+            format: [img.width, img.height],
+          });
+          pdf.addImage(dataUrl, "PNG", 0, 0, img.width, img.height);
+          pdf.save(`${safe}.pdf`);
+        }
+      } catch (err) {
+        console.error("[atlas-workspace] export", err);
+      } finally {
+        setExporting(null);
+      }
+    },
+    [exporting, title],
+  );
 
   React.useEffect(() => {
     if (!boardId) return;
@@ -104,6 +167,16 @@ export function AtlasWorkspace({
     if (initialTitle !== undefined) setTitle(initialTitle);
   }, [initialTitle]);
 
+  React.useEffect(() => {
+    if (!exportOpen) return;
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest("[data-export-menu]")) setExportOpen(false);
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [exportOpen]);
+
   const flushTitle = React.useCallback(() => {
     if (boardId && user) {
       renameBoard(user.uid, boardId, title).catch((err) => {
@@ -112,48 +185,175 @@ export function AtlasWorkspace({
     }
   }, [boardId, title, user]);
 
+  // Poda de la selección cuando una métrica deja de estar en el canvas.
   React.useEffect(() => {
-    if (selected && !canvasMetrics.some((m) => m.id === selected.id)) {
-      setSelected(null);
-    }
-  }, [selected, canvasMetrics]);
+    setSelectedIds((prev) => {
+      const next = prev.filter((id) => canvasMetrics.some((m) => m.id === id));
+      return next.length === prev.length ? prev : next;
+    });
+    setPrimaryId((prev) =>
+      prev && !canvasMetrics.some((m) => m.id === prev) ? null : prev,
+    );
+  }, [canvasMetrics]);
 
+  const clearSelection = React.useCallback(() => {
+    setSelectedIds([]);
+    setPrimaryId(null);
+  }, []);
+
+  const isEditingTarget = (target: EventTarget | null) => {
+    const el = target as HTMLElement | null;
+    return (
+      !!el &&
+      (el.tagName === "INPUT" ||
+        el.tagName === "TEXTAREA" ||
+        el.isContentEditable)
+    );
+  };
+
+  // Borrar (Delete/Backspace) saca del canvas todas las fichas seleccionadas.
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
-      if (!selected) return;
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      ) {
-        return;
-      }
+      if (selectedIds.length === 0) return;
+      if (isEditingTarget(e.target)) return;
       e.preventDefault();
-      const existing = metricManualPositions[selected.id];
-      const pos = existing ?? metricMapPosition(selected, matrixAxes);
-      setMetricManualPosition(selected.id, pos);
-      excludeMetric(selected.id);
-      setSelected(null);
+      excludeMetrics(selectedIds);
+      clearSelection();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [selected, excludeMetric, metricManualPositions, matrixAxes, setMetricManualPosition]);
+  }, [selectedIds, excludeMetrics, clearSelection]);
 
-  const handleSelect = React.useCallback(
+  // Undo / Redo: Cmd/Ctrl+Z y Cmd/Ctrl+Shift+Z (o Ctrl+Y).
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (isEditingTarget(e.target)) return;
+      const key = e.key.toLowerCase();
+      if (key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (key === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
+  // Shift+1 = encajar todo · Shift+2 = encuadrar la selección (estilo Figma).
+  // Usamos e.code (tecla física) para que funcione en cualquier distribución.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isEditingTarget(e.target)) return;
+      if (e.code === "Digit1") {
+        e.preventDefault();
+        figjamRef.current?.zoomToFit();
+      } else if (e.code === "Digit2") {
+        if (selectedIds.length === 0) return;
+        e.preventDefault();
+        figjamRef.current?.zoomToSelection();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [selectedIds]);
+
+  /** Selección desde el canvas: clic normal = solo esa; Shift/Cmd = alternar. */
+  const handleCanvasSelect = React.useCallback(
+    (m: Metric, additive: boolean) => {
+      if (additive) {
+        setSelectedIds((prev) =>
+          prev.includes(m.id)
+            ? prev.filter((id) => id !== m.id)
+            : [...prev, m.id],
+        );
+      } else {
+        setSelectedIds([m.id]);
+      }
+      setPrimaryId(m.id);
+    },
+    [],
+  );
+
+  /** Selección por recuadro (lasso): añade las fichas del recuadro a la selección. */
+  const handleBoxSelect = React.useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setSelectedIds((prev) => {
+      const set = new Set(prev);
+      for (const id of ids) set.add(id);
+      return [...set];
+    });
+    setPrimaryId(ids[ids.length - 1] ?? null);
+  }, []);
+
+  /** Selección desde la bandeja lateral: reincluye al canvas si estaba fuera. */
+  const handleTraySelect = React.useCallback(
     (m: Metric) => {
       if (excludedMetricIds.includes(m.id)) {
         const center = figjamRef.current?.getViewportCenterNorm();
-        if (center) {
-          setMetricManualPosition(m.id, center);
-        }
-        includeMetric(m.id);
+        if (center) includeMetricAt(m.id, center);
+        else includeMetric(m.id);
       }
-      setSelected(m);
+      setSelectedIds([m.id]);
+      setPrimaryId(m.id);
     },
-    [excludedMetricIds, includeMetric, setMetricManualPosition],
+    [excludedMetricIds, includeMetric, includeMetricAt],
+  );
+
+  // Arrastrar una métrica desde la bandeja y soltarla en el canvas (con fantasma).
+  // Clic sin mover = comportamiento actual (handleTraySelect, al centro).
+  const trayDragRef = React.useRef<{
+    metric: Metric;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+  const [trayGhost, setTrayGhost] = React.useState<{
+    metric: Metric;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const handleMetricPointerDown = React.useCallback(
+    (metric: Metric, e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      trayDragRef.current = { metric, startX: e.clientX, startY: e.clientY, moved: false };
+      const onMove = (ev: PointerEvent) => {
+        const d = trayDragRef.current;
+        if (!d) return;
+        if (!d.moved && Math.hypot(ev.clientX - d.startX, ev.clientY - d.startY) > 5) {
+          d.moved = true;
+        }
+        if (d.moved) setTrayGhost({ metric: d.metric, x: ev.clientX, y: ev.clientY });
+      };
+      const onUp = (ev: PointerEvent) => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        const d = trayDragRef.current;
+        trayDragRef.current = null;
+        setTrayGhost(null);
+        if (!d) return;
+        if (d.moved) {
+          const norm = figjamRef.current?.screenToCanvasNorm(ev.clientX, ev.clientY);
+          // Fuera del canvas → no añade.
+          if (norm) {
+            includeMetricAt(d.metric.id, norm);
+            setSelectedIds([d.metric.id]);
+            setPrimaryId(d.metric.id);
+          }
+        } else {
+          handleTraySelect(d.metric);
+        }
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [includeMetricAt, handleTraySelect],
   );
 
   return (
@@ -194,9 +394,54 @@ export function AtlasWorkspace({
               Metric Atlas
             </span>
           )}
-          <span className="ml-auto shrink-0 text-xs tabular-nums text-[#757575]">
+          <button
+            type="button"
+            onClick={() => setDataTableOpen((v) => !v)}
+            aria-pressed={dataTableOpen}
+            aria-label="Tabla de datos"
+            title="Tabla de datos"
+            className={cn(
+              "ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors",
+              dataTableOpen
+                ? "border-[#0d99ff]/40 bg-[#f0f7ff] text-[#0d99ff]"
+                : "border-[#e6e6e6] bg-white text-[#444] hover:bg-[#f7f7f7]",
+            )}
+          >
+            <Table2 className="h-4 w-4" />
+          </button>
+          <span className="shrink-0 text-xs tabular-nums text-[#757575]">
+            {selectedIds.length > 1 ? (
+              <span className="mr-2 rounded-md bg-[#f0f7ff] px-1.5 py-0.5 font-medium text-[#0d99ff]">
+                {selectedIds.length} sel.
+              </span>
+            ) : null}
             {canvasMetrics.length}/{metrics.length}
           </span>
+          {boardId ? (
+            <div className="flex shrink-0 items-center rounded-md border border-[#e6e6e6] bg-white">
+              <button
+                type="button"
+                onClick={undo}
+                disabled={!canUndo}
+                aria-label="Deshacer"
+                title="Deshacer (⌘/Ctrl+Z)"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-l-md text-[#444] transition-colors hover:bg-[#f7f7f7] disabled:cursor-not-allowed disabled:text-[#cfcfcf] disabled:hover:bg-transparent"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </button>
+              <span className="h-5 w-px bg-[#e6e6e6]" />
+              <button
+                type="button"
+                onClick={redo}
+                disabled={!canRedo}
+                aria-label="Rehacer"
+                title="Rehacer (⌘/Ctrl+Shift+Z)"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-r-md text-[#444] transition-colors hover:bg-[#f7f7f7] disabled:cursor-not-allowed disabled:text-[#cfcfcf] disabled:hover:bg-transparent"
+              >
+                <Redo2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -214,6 +459,50 @@ export function AtlasWorkspace({
           >
             Variables
           </button>
+          {boardId ? (
+            <div className="relative" data-export-menu>
+              <button
+                type="button"
+                onClick={() => setExportOpen((v) => !v)}
+                disabled={exporting !== null}
+                aria-expanded={exportOpen}
+                aria-haspopup="menu"
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-[#e6e6e6] bg-white px-2.5 text-xs font-medium text-[#444] transition-[background-color,border-color] hover:border-[#d9d9d9] hover:bg-[#f7f7f7] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {exporting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                <span className="hidden sm:inline">
+                  {exporting ? "Exportando…" : "Exportar"}
+                </span>
+              </button>
+              {exportOpen ? (
+                <div className="absolute right-0 top-[calc(100%+6px)] z-40 min-w-[180px] rounded-lg border border-[#e6e6e6] bg-white py-1 shadow-lg">
+                  <p className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.06em] text-[#949494]">
+                    Exportar vista actual
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleExport("png")}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#1e1e1e] transition-colors hover:bg-[#f7f7f7]"
+                  >
+                    <FileImage className="h-3.5 w-3.5 text-[#757575]" />
+                    Imagen PNG
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExport("pdf")}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#1e1e1e] transition-colors hover:bg-[#f7f7f7]"
+                  >
+                    <FileText className="h-3.5 w-3.5 text-[#757575]" />
+                    Documento PDF
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {boardId && user ? (
             <div className="relative">
               <Button
@@ -256,8 +545,9 @@ export function AtlasWorkspace({
               <MetricsTray
                 metrics={trayMetrics}
                 excludedIds={excludedMetricIds}
-                selectedId={selected?.id ?? null}
-                onSelect={handleSelect}
+                selectedId={primaryId}
+                onSelect={handleTraySelect}
+                onMetricPointerDown={handleMetricPointerDown}
                 variant="flat"
               />
             ) : (
@@ -295,9 +585,9 @@ export function AtlasWorkspace({
                 <MetricsTray
                   metrics={trayMetrics}
                   excludedIds={excludedMetricIds}
-                  selectedId={selected?.id ?? null}
+                  selectedId={primaryId}
                   onSelect={(m) => {
-                    handleSelect(m);
+                    handleTraySelect(m);
                     setFiltersOpen(false);
                   }}
                   variant="flat"
@@ -322,21 +612,25 @@ export function AtlasWorkspace({
             <FigJamBoard
               ref={figjamRef}
               metrics={visible}
-              selectedId={selected?.id ?? null}
-              onSelect={(m) => setSelected(m)}
+              selectedIds={selectedIdSet}
+              onSelect={handleCanvasSelect}
+              onClearSelection={clearSelection}
+              onBoxSelect={handleBoxSelect}
+              dataTableOpen={dataTableOpen}
+              onCloseDataTable={() => setDataTableOpen(false)}
             />
           </div>
         </div>
 
         {/* Right insight panel */}
         <MetricInsightPanel
-          metric={selected}
-          onClose={() => setSelected(null)}
+          metric={primary}
+          onClose={clearSelection}
           onOpenFullCard={(m) => {
             setDocsMetric(m);
             setDocsOpen(true);
           }}
-          className={cn(!selected && "max-md:hidden")}
+          className={cn(!primary && "max-md:hidden")}
         />
       </div>
 
@@ -395,6 +689,15 @@ export function AtlasWorkspace({
               onOpenMetric={(m) => setDocsMetric(m)}
             />
           </div>
+        </div>
+      ) : null}
+
+      {trayGhost ? (
+        <div
+          className="pointer-events-none fixed z-[60] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[#0d99ff]/40 bg-white/95 px-3 py-2 text-[12px] font-medium text-[#1e1e1e] shadow-[0_8px_24px_rgba(0,0,0,0.18)]"
+          style={{ left: trayGhost.x, top: trayGhost.y }}
+        >
+          {trayGhost.metric.shortName ?? trayGhost.metric.name}
         </div>
       ) : null}
     </div>

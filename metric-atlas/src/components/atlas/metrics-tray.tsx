@@ -15,12 +15,15 @@ export function MetricsTray({
   selectedId,
   excludedIds,
   onSelect,
+  onMetricPointerDown,
   variant = "card",
 }: {
   metrics: Metric[];
   selectedId: string | null;
   excludedIds?: string[];
   onSelect: (metric: Metric) => void;
+  /** Si se pasa, las fichas se pueden arrastrar al canvas (el clic sin mover = onSelect). */
+  onMetricPointerDown?: (metric: Metric, e: React.PointerEvent) => void;
   variant?: "card" | "flat";
 }) {
   const [query, setQuery] = React.useState("");
@@ -84,8 +87,33 @@ export function MetricsTray({
             <button
               key={metric.id}
               type="button"
-              onClick={() => onSelect(metric)}
-              title={excluded ? "Click para volver a añadir al canvas" : undefined}
+              onClick={onMetricPointerDown ? undefined : () => onSelect(metric)}
+              onPointerDown={
+                onMetricPointerDown
+                  ? (e) => {
+                      if (e.button === 0) onMetricPointerDown(metric, e);
+                    }
+                  : undefined
+              }
+              onKeyDown={
+                onMetricPointerDown
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelect(metric);
+                      }
+                    }
+                  : undefined
+              }
+              title={
+                onMetricPointerDown
+                  ? excluded
+                    ? "Arrastra al canvas para colocarla · clic = al centro"
+                    : "Arrastra para recolocar · clic = enfocar"
+                  : excluded
+                    ? "Click para volver a añadir al canvas"
+                    : undefined
+              }
               className={cn(
                 "w-full rounded-lg border px-3 py-2 text-left transition-[box-shadow,transform,border-color] duration-150 ease-out",
                 selected

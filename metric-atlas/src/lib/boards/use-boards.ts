@@ -4,7 +4,7 @@ import * as React from "react";
 import type { MatrixBoard, MatrixSpace } from "@/lib/matrix-boards";
 import { useAuth } from "@/lib/auth/auth-provider";
 import {
-  ensureStarterBoard,
+  ensureWorkspaceSetup,
   subscribeToBoards,
   subscribeToSpaces,
 } from "./firestore";
@@ -36,6 +36,14 @@ export function useBoards(): BoardsState {
     let spacesReady = false;
     let cancelled = false;
 
+    // Garantiza el modelo de workspaces (espacio por defecto + migración) una vez por usuario.
+    if (seededRef.current !== user.uid) {
+      seededRef.current = user.uid;
+      ensureWorkspaceSetup(user.uid).catch((err) => {
+        console.error("[boards] ensureWorkspaceSetup", err);
+      });
+    }
+
     const finishIfReady = () => {
       if (cancelled) return;
       if (boardsReady && spacesReady) {
@@ -47,13 +55,6 @@ export function useBoards(): BoardsState {
       user.uid,
       (boards) => {
         if (cancelled) return;
-        if (seededRef.current !== user.uid && boards.length === 0) {
-          seededRef.current = user.uid;
-          ensureStarterBoard(user.uid).catch((err) => {
-            console.error("[boards] ensureStarterBoard", err);
-          });
-          return;
-        }
         boardsReady = true;
         setState((s) => ({ ...s, boards, error: null }));
         finishIfReady();

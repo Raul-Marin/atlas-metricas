@@ -120,12 +120,24 @@ export async function createBoard(
         canvasOverrides?.matrixAxes ?? defaultMatrixAxes,
       ),
       filters: canvasOverrides?.filters ?? defaultAtlasFilters,
-      metricManualPositions:
-        canvasOverrides?.metricManualPositions ?? {},
+      metricScores: canvasOverrides?.metricScores ?? {},
     },
   };
   await setDoc(doc(boardsCol(uid), id), board);
   return board;
+}
+
+/** Clona un board (canvas completo: ejes, filtros, posiciones, exclusiones) en una matriz nueva. */
+export async function duplicateBoard(
+  uid: string,
+  source: MatrixBoard,
+): Promise<MatrixBoard> {
+  const copy = await createBoard(uid, `${source.name} (copia)`, source.canvas);
+  if (source.spaceId) {
+    await setBoardSpace(uid, copy.id, source.spaceId);
+    return { ...copy, spaceId: source.spaceId };
+  }
+  return copy;
 }
 
 export async function updateBoardCanvas(
@@ -137,7 +149,7 @@ export async function updateBoardCanvas(
     canvas: {
       ...canvas,
       matrixAxes: normalizeAxes(canvas.matrixAxes),
-      metricManualPositions: canvas.metricManualPositions ?? {},
+      metricScores: canvas.metricScores ?? {},
     },
     updatedAt: nowIso(),
   });
@@ -203,11 +215,60 @@ export async function createSpace(
   return space;
 }
 
-/** Crea un board "starter" si la colección del usuario está vacía. */
-export async function ensureStarterBoard(uid: string): Promise<void> {
-  const snap = await getDocs(boardsCol(uid));
-  if (!snap.empty) return;
-  await createBoard(uid, "Mi primera matrix");
+export async function renameSpace(
+  uid: string,
+  id: string,
+  name: string,
+): Promise<void> {
+  await updateDoc(doc(spacesCol(uid), id), {
+    name: name.trim() || "Espacio",
+  });
+}
+
+export const DEFAULT_WORKSPACE_NAME = "Mi espacio";
+
+/**
+ * Garantiza el modelo de workspaces: siempre existe al menos un espacio de
+ * trabajo, toda matriz vive dentro de uno (migra las que estuvieran sin espacio)
+ * y un usuario nuevo arranca con una matriz inicial. Idempotente.
+ */
+export async function ensureWorkspaceSetup(uid: string): Promise<void> {
+  const [spacesSnap, boardsSnap] = await Promise.all([
+    getDocs(spacesCol(uid)),
+    getDocs(boardsCol(uid)),
+  ]);
+
+  const orphans = boardsSnap.docs.filter(
+    (d) => (d.data() as MatrixBoard).spaceId == null,
+  );
+
+  // Espacio por defecto "Mi espacio": reutiliza el existente con ese nombre.
+  let defaultSpaceId: string | undefined = spacesSnap.docs.find(
+    (d) => (d.data() as MatrixSpace).name === DEFAULT_WORKSPACE_NAME,
+  )?.id;
+
+  // Crea "Mi espacio" si hace falta: hay matrices sin espacio que reubicar,
+  // o el usuario aún no tiene ningún espacio de trabajo.
+  if (!defaultSpaceId && (orphans.length > 0 || spacesSnap.empty)) {
+    defaultSpaceId = (await createSpace(uid, DEFAULT_WORKSPACE_NAME)).id;
+  }
+
+  // Toda matriz vive en un espacio: reubica las que estén sin espacio.
+  if (orphans.length > 0 && defaultSpaceId) {
+    await Promise.all(
+      orphans.map((d) => setBoardSpace(uid, d.id, defaultSpaceId!)),
+    );
+  }
+
+  // Usuario nuevo: crea una matriz inicial dentro del espacio por defecto.
+  if (boardsSnap.empty) {
+    const targetId =
+      defaultSpaceId ??
+      spacesSnap.docs[0]?.id ??
+      (await createSpace(uid, DEFAULT_WORKSPACE_NAME)).id;
+    const board = await createBoard(uid, "Mi primera matrix");
+    await setBoardSpace(uid, board.id, targetId);
+  }
 }
 
 export function subscribeToShareState(

@@ -19,19 +19,13 @@ import {
   type VizCategory,
 } from "@/lib/quadrant-viz";
 import { cn } from "@/lib/utils";
-import { Info, Minus, Plus, RotateCcw } from "lucide-react";
+import { toPng } from "html-to-image";
+import { Info, Maximize, Minus, Plus, RotateCcw } from "lucide-react";
+import { MetricsDataTable } from "./metrics-data-table";
 
 /** Tamaño lógico del canvas (px); el mapa ocupa todo el rectángulo y puedes desplazarte fuera. */
 const CANVAS_WORLD_W = 5600;
 const CANVAS_WORLD_H = 4200;
-
-/** Cuadrantes TL, TR, BL, BR — refuerzan la lectura 2×2 sin cerrar el canvas. */
-const MATRIX_QUADRANT_TINTS = [
-  "rgba(129, 140, 248, 0.11)",
-  "rgba(251, 146, 60, 0.1)",
-  "rgba(45, 212, 191, 0.1)",
-  "rgba(250, 204, 21, 0.12)",
-] as const;
 
 const FIGJAM_DOT_GRID = {
   backgroundColor: "#f7f7f7",
@@ -140,6 +134,7 @@ function LegendFloat() {
     return (
       <button
         type="button"
+        data-export-hide="true"
         onClick={() => setOpen(true)}
         aria-label="Mostrar leyenda de tipos"
         className="absolute left-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-white/55 text-[#626262] shadow-md backdrop-blur-md transition-colors hover:bg-white/75 hover:text-[#1e1e1e]"
@@ -153,6 +148,7 @@ function LegendFloat() {
     <div
       role="button"
       tabIndex={0}
+      data-export-hide="true"
       onClick={() => setOpen(false)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -180,31 +176,58 @@ function LegendFloat() {
 
 export type FigJamBoardHandle = {
   getViewportCenterNorm: () => { x: number; y: number } | null;
+  /** Captura el viewport visible como PNG (dataURL). Oculta controles flotantes. */
+  exportImage: () => Promise<string | null>;
+  /** Encuadra (zoom + pan) las fichas seleccionadas para que llenen la vista. */
+  zoomToSelection: () => void;
+  /** Encaja todas las fichas del canvas en la vista (zoom-to-fit). */
+  zoomToFit: () => void;
+  /** Convierte un punto de pantalla a coordenadas normalizadas del canvas.
+   *  Devuelve null si el punto está fuera del lienzo (no se debe colocar). */
+  screenToCanvasNorm: (clientX: number, clientY: number) => { x: number; y: number } | null;
 };
 
 type FigJamBoardProps = {
   metrics: Metric[];
-  selectedId: string | null;
-  onSelect: (m: Metric) => void;
+  selectedIds: Set<string>;
+  onSelect: (m: Metric, additive: boolean) => void;
+  onClearSelection: () => void;
+  /** Selección por recuadro (Shift+arrastrar el fondo): añade las fichas a la selección. */
+  onBoxSelect?: (ids: string[]) => void;
+  /** Tabla de datos flotante (dentro del canvas), con valores en vivo. */
+  dataTableOpen?: boolean;
+  onCloseDataTable?: () => void;
 };
 
 export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>(
-  function FigJamBoard({ metrics, selectedId, onSelect }, forwardedRef) {
+  function FigJamBoard(
+    {
+      metrics,
+      selectedIds,
+      onSelect,
+      onClearSelection,
+      onBoxSelect,
+      dataTableOpen,
+      onCloseDataTable,
+    },
+    forwardedRef,
+  ) {
   const {
     matrixAxes,
     colorCardsByCategory,
     showMatrixQuadrantColors,
+    quadrantColors,
     mapClusterMode,
-    metricManualPositions,
-    setMetricManualPosition,
+    metricScores,
+    setMetricPosition,
+    moveMetrics,
     excludedMetricIds,
   } = useAtlasFilters();
 
-  const [dragPreview, setDragPreview] = React.useState<{
-    id: string;
-    x: number;
-    y: number;
-  } | null>(null);
+  /** Overrides de posición en vivo durante el arrastre (id → posición norm). */
+  const [dragPreview, setDragPreview] = React.useState<
+    Record<string, { x: number; y: number }> | null
+  >(null);
   const [hints, setHints] = React.useState<Record<HintKey, HintStatus>>({
     zoom: "pending",
     pan: "pending",
@@ -231,11 +254,14 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
     id: string;
     cx: number;
     cy: number;
-    nx: number;
-    ny: number;
+    /** Posición inicial de cada ficha arrastrada (1 si es individual, N si es grupo). */
+    starts: Map<string, { x: number; y: number }>;
     moved: boolean;
   } | null>(null);
-  const liveDragNormRef = React.useRef<{ x: number; y: number } | null>(null);
+  /** Posiciones finales en vivo de las fichas arrastradas (id → posición norm). */
+  const liveDragNormRef = React.useRef<Record<string, { x: number; y: number }> | null>(
+    null,
+  );
   const xEnds = axisEndLabels(matrixAxes.axisX);
   const yEnds = axisEndLabels(matrixAxes.axisY);
   const xAxisTitle =
@@ -250,6 +276,17 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
   const panRef = React.useRef(pan);
   zoomRef.current = zoom;
   panRef.current = pan;
+
+  // Refs en vivo para que el handle imperativo (deps []) lea siempre lo último.
+  const selectedIdsRef = React.useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
+  const layoutMapRef = React.useRef<Map<string, { x: number; y: number }>>(
+    new Map(),
+  );
+  const pointsRef = React.useRef<MapPoint[]>([]);
+  const frameNormRef = React.useRef<(pts: { x: number; y: number }[]) => void>(
+    () => {},
+  );
 
   React.useImperativeHandle(
     forwardedRef,
@@ -269,7 +306,46 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
           y: Math.min(0.97, Math.max(0.03, wy / CANVAS_WORLD_H)),
         };
       },
+      exportImage: async () => {
+        const vp = viewportRef.current;
+        if (!vp) return null;
+        return toPng(vp, {
+          pixelRatio: 2,
+          backgroundColor: "#f3f3f3",
+          // Excluye controles flotantes (zoom, hints, leyenda) de la captura.
+          filter: (node) =>
+            !(node instanceof HTMLElement && node.dataset.exportHide === "true"),
+        });
+      },
+      zoomToSelection: () => {
+        const lm = layoutMapRef.current;
+        const pts = [...selectedIdsRef.current]
+          .map((id) => lm.get(id))
+          .filter((p): p is { x: number; y: number } => !!p);
+        frameNormRef.current(pts);
+      },
+      zoomToFit: () => {
+        frameNormRef.current(
+          pointsRef.current.map((p) => ({ x: p.x, y: p.y })),
+        );
+      },
+      screenToCanvasNorm: (clientX, clientY) => {
+        const vp = viewportRef.current;
+        if (!vp) return null;
+        const rect = vp.getBoundingClientRect();
+        const lx = clientX - rect.left;
+        const ly = clientY - rect.top;
+        // Fuera del lienzo → no se coloca.
+        if (lx < 0 || ly < 0 || lx > rect.width || ly > rect.height) return null;
+        const z = zoomRef.current;
+        const p = panRef.current;
+        return {
+          x: Math.min(0.97, Math.max(0.03, (lx - p.x) / z / CANVAS_WORLD_W)),
+          y: Math.min(0.97, Math.max(0.03, (ly - p.y) / z / CANVAS_WORLD_H)),
+        };
+      },
     }),
+    // El handle solo usa refs (frameNormRef/pointsRef/...); se crea una vez.
     [],
   );
 
@@ -279,6 +355,21 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
     startY: number;
     panX: number;
     panY: number;
+    moved: boolean;
+  } | null>(null);
+
+  // Selección por recuadro (lasso): Shift + arrastrar el fondo.
+  const boxRef = React.useRef<{
+    pointerId: number;
+    sx: number;
+    sy: number;
+    moved: boolean;
+  } | null>(null);
+  const [selectBox, setSelectBox] = React.useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
   } | null>(null);
 
   React.useEffect(() => {
@@ -290,6 +381,10 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
   React.useEffect(() => {
     const release = () => {
       dragRef.current = null;
+      if (boxRef.current) {
+        boxRef.current = null;
+        setSelectBox(null);
+      }
       if (cardDragRef.current) {
         cardDragRef.current = null;
         liveDragNormRef.current = null;
@@ -379,6 +474,46 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
     [],
   );
 
+  /** Encuadra un conjunto de posiciones normalizadas para que llenen la vista. */
+  const frameNorm = React.useCallback(
+    (pts: { x: number; y: number }[]) => {
+      const vp = viewportRef.current;
+      if (!vp || pts.length === 0) return;
+      const w = vp.clientWidth;
+      const h = vp.clientHeight;
+      if (w < 8 || h < 8) return;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const p of pts) {
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y);
+        maxY = Math.max(maxY, p.y);
+      }
+      // Incluye el tamaño de la ficha + margen para que no quede pegada al borde.
+      const CARD_W = 260;
+      const CARD_H = 96;
+      const spanW = (maxX - minX) * CANVAS_WORLD_W + CARD_W;
+      const spanH = (maxY - minY) * CANVAS_WORLD_H + CARD_H;
+      const fit = 0.82;
+      const z = clampZoom(
+        Math.min((w * fit) / spanW, (h * fit) / spanH),
+        getMinZoom(w, h),
+      );
+      const cx = ((minX + maxX) / 2) * CANVAS_WORLD_W;
+      const cy = ((minY + maxY) / 2) * CANVAS_WORLD_H;
+      const newPan = clampPan({ x: w / 2 - cx * z, y: h / 2 - cy * z }, z, w, h);
+      zoomRef.current = z;
+      panRef.current = newPan;
+      setZoom(z);
+      setPan(newPan);
+    },
+    [clampPan, getMinZoom],
+  );
+  frameNormRef.current = frameNorm;
+
   React.useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -433,11 +568,26 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
     centerCamera();
   }, [centerCamera]);
 
+  /** Coordenadas del puntero relativas al viewport (px). */
+  const viewportPoint = (clientX: number, clientY: number) => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    return rect
+      ? { x: clientX - rect.left, y: clientY - rect.top }
+      : { x: clientX, y: clientY };
+  };
+
   const onGridPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     // Si ya hay una ficha capturada, no arrancamos pan paralelo.
     if (cardDragRef.current) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    // Shift + arrastrar el fondo = selección por recuadro (lasso). Si no, pan.
+    if (e.shiftKey && onBoxSelect) {
+      const { x, y } = viewportPoint(e.clientX, e.clientY);
+      boxRef.current = { pointerId: e.pointerId, sx: x, sy: y, moved: false };
+      setSelectBox({ x, y, w: 0, h: 0 });
+      return;
+    }
     const p = panRef.current;
     dragRef.current = {
       pointerId: e.pointerId,
@@ -445,15 +595,31 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
       startY: e.clientY,
       panX: p.x,
       panY: p.y,
+      moved: false,
     };
   };
 
   const onGridPointerMove = (e: React.PointerEvent) => {
+    const b = boxRef.current;
+    if (b && e.pointerId === b.pointerId) {
+      const { x, y } = viewportPoint(e.clientX, e.clientY);
+      if (Math.hypot(x - b.sx, y - b.sy) > 3) b.moved = true;
+      setSelectBox({
+        x: Math.min(b.sx, x),
+        y: Math.min(b.sy, y),
+        w: Math.abs(x - b.sx),
+        h: Math.abs(y - b.sy),
+      });
+      return;
+    }
     const d = dragRef.current;
     if (!d || e.pointerId !== d.pointerId) return;
     const dx = e.clientX - d.startX;
     const dy = e.clientY - d.startY;
-    if (Math.hypot(dx, dy) > 4) markHintHit("pan");
+    if (Math.hypot(dx, dy) > 4) {
+      d.moved = true;
+      markHintHit("pan");
+    }
     const el = viewportRef.current;
     const raw = { x: d.panX + dx, y: d.panY + dy };
     const next = el
@@ -464,20 +630,48 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
   };
 
   const onGridPointerUp = (e: React.PointerEvent) => {
-    const d = dragRef.current;
-    if (!d || e.pointerId !== d.pointerId) return;
-    dragRef.current = null;
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {
       /* noop */
     }
+    const b = boxRef.current;
+    if (b && e.pointerId === b.pointerId) {
+      boxRef.current = null;
+      setSelectBox(null);
+      if (b.moved && onBoxSelect) {
+        const end = viewportPoint(e.clientX, e.clientY);
+        const z = zoomRef.current;
+        const p = panRef.current;
+        // Recuadro (px viewport) → coordenadas normalizadas del canvas.
+        const toNorm = (vx: number, vy: number) => ({
+          nx: (vx - p.x) / z / CANVAS_WORLD_W,
+          ny: (vy - p.y) / z / CANVAS_WORLD_H,
+        });
+        const a = toNorm(Math.min(b.sx, end.x), Math.min(b.sy, end.y));
+        const c = toNorm(Math.max(b.sx, end.x), Math.max(b.sy, end.y));
+        const ids = pointsRef.current
+          .filter(
+            (pt) =>
+              pt.x >= a.nx && pt.x <= c.nx && pt.y >= a.ny && pt.y <= c.ny,
+          )
+          .map((pt) => pt.id);
+        if (ids.length > 0) onBoxSelect(ids);
+      }
+      return;
+    }
+    const d = dragRef.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    dragRef.current = null;
+    // Clic en el fondo sin arrastrar = deseleccionar todo.
+    if (!d.moved) onClearSelection();
   };
 
   const layoutMap = React.useMemo(
-    () => resolveMetricLayout(metrics, matrixAxes, metricManualPositions),
-    [matrixAxes, metricManualPositions, metrics],
+    () => resolveMetricLayout(metrics, matrixAxes, metricScores),
+    [matrixAxes, metricScores, metrics],
   );
+  layoutMapRef.current = layoutMap;
 
   const renderableMetrics = React.useMemo(
     () => metrics.filter((m) => !excludedMetricIds.includes(m.id)),
@@ -488,7 +682,7 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
     () =>
       renderableMetrics.map((m) => {
         const base = layoutMap.get(m.id) ?? { x: 0.5, y: 0.5 };
-        const d = dragPreview?.id === m.id ? dragPreview : null;
+        const d = dragPreview?.[m.id] ?? null;
         return {
           id: m.id,
           x: d ? d.x : base.x,
@@ -498,6 +692,7 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
       }),
     [dragPreview, layoutMap, renderableMetrics],
   );
+  pointsRef.current = points;
 
   const clusters = React.useMemo(() => {
     if (!mapClusterMode) return singletonClustersFromPoints(points);
@@ -566,7 +761,10 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
         role="application"
         aria-label={`Team matrix: ${xAxisTitle} por ${yAxisTitle}. Zoom y arrastre.`}
       >
-        <div className="absolute right-2 top-2 z-20 flex flex-col gap-1 rounded-full border border-white/40 bg-white/55 p-1 shadow-sm backdrop-blur-md">
+        <div
+          data-export-hide="true"
+          className="absolute right-2 top-2 z-20 flex flex-col gap-1 rounded-full border border-white/40 bg-white/55 p-1 shadow-sm backdrop-blur-md"
+        >
           <button
             type="button"
             className="rounded-full p-1.5 text-[#626262] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[#f0f0f0] hover:text-[#1e1e1e] hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/20"
@@ -627,6 +825,15 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
           >
             <RotateCcw className="h-4 w-4" />
           </button>
+          <button
+            type="button"
+            className="rounded-full p-1.5 text-[#626262] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[#f0f0f0] hover:text-[#1e1e1e] hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/20"
+            aria-label="Encajar todo (Shift+1)"
+            title="Encajar todo (Shift+1)"
+            onClick={() => frameNormRef.current(pointsRef.current.map((p) => ({ x: p.x, y: p.y })))}
+          >
+            <Maximize className="h-4 w-4" />
+          </button>
         </div>
 
         {(() => {
@@ -642,7 +849,10 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
             return null;
           }
           return (
-            <div className="pointer-events-none absolute bottom-2 left-2 z-20 max-w-[min(100%,280px)] text-[9px] leading-snug">
+            <div
+              data-export-hide="true"
+              className="pointer-events-none absolute bottom-2 left-2 z-20 max-w-[min(100%,280px)] text-[9px] leading-snug"
+            >
               {row1.length > 0 ? (
                 <p>
                   {row1.map((item, i) => (
@@ -675,6 +885,19 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
           );
         })()}
 
+        {selectBox ? (
+          <div
+            data-export-hide="true"
+            className="pointer-events-none absolute z-[16] rounded-[2px] border border-[#0d99ff] bg-[#0d99ff]/10"
+            style={{
+              left: selectBox.x,
+              top: selectBox.y,
+              width: selectBox.w,
+              height: selectBox.h,
+            }}
+          />
+        ) : null}
+
         <div
           className="absolute left-0 top-0 will-change-transform"
           style={{
@@ -696,14 +919,11 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
             <div className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.52),_transparent_68%)]" />
             {showMatrixQuadrantColors ? (
               <div className="pointer-events-none absolute inset-0 z-[2] grid grid-cols-2 grid-rows-2 gap-px bg-[#d9d9d9]/80">
-                {MATRIX_QUADRANT_TINTS.map((tint, i) => (
+                {quadrantColors.map((color, i) => (
                   <div
                     key={i}
                     className="min-h-0 min-w-0"
-                    style={{
-                      background:
-                        `linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.04)), ${tint}`,
-                    }}
+                    style={{ backgroundColor: color }}
                   />
                 ))}
               </div>
@@ -725,7 +945,7 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
 
           {clusters.map((c) => {
             if (c.metrics.length > 1) {
-              const anySelected = c.metrics.some((m) => m.id === selectedId);
+              const anySelected = c.metrics.some((m) => selectedIds.has(m.id));
               return (
                 <button
                   key={c.id}
@@ -753,9 +973,9 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
             const cat = metricVizCategory(m);
             const legendRow = VIZ_LEGEND.find((row) => row.key === cat);
             const label = m.shortName ?? m.name;
-            const dragging = dragPreview?.id === m.id;
+            const dragging = dragPreview?.[m.id] != null;
             const rot = dragging ? 0 : hashRot(m.id);
-            const selected = selectedId === m.id;
+            const selected = selectedIds.has(m.id);
             const accentColor = legendRow?.color ?? "#9ca3af";
             const cardAccent = colorCardsByCategory
               ? vizCategoryCardAccent(cat, { selected })
@@ -800,15 +1020,21 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
                 onPointerDown={(e) => {
                   if (e.button !== 0) return;
                   e.stopPropagation();
-                  const pos = layoutMap.get(m.id) ?? { x: c.x, y: c.y };
+                  // Arrastre en grupo solo si la ficha ya forma parte de una
+                  // selección múltiple; si no, se arrastra solo esta ficha.
+                  const groupDrag = selectedIds.has(m.id) && selectedIds.size > 1;
+                  const dragIds = groupDrag ? [...selectedIds] : [m.id];
+                  const starts = new Map<string, { x: number; y: number }>();
+                  for (const id of dragIds) {
+                    starts.set(id, layoutMap.get(id) ?? { x: c.x, y: c.y });
+                  }
                   liveDragNormRef.current = null;
                   cardDragRef.current = {
                     pointerId: e.pointerId,
                     id: m.id,
                     cx: e.clientX,
                     cy: e.clientY,
-                    nx: pos.x,
-                    ny: pos.y,
+                    starts,
                     moved: false,
                   };
                   (e.currentTarget as HTMLButtonElement).setPointerCapture(e.pointerId);
@@ -825,10 +1051,15 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
                   const z = zoomRef.current;
                   const dnx = dx / z / CANVAS_WORLD_W;
                   const dny = dy / z / CANVAS_WORLD_H;
-                  const nx = Math.min(0.97, Math.max(0.03, d.nx + dnx));
-                  const ny = Math.min(0.97, Math.max(0.03, d.ny + dny));
-                  liveDragNormRef.current = { x: nx, y: ny };
-                  setDragPreview({ id: m.id, x: nx, y: ny });
+                  const preview: Record<string, { x: number; y: number }> = {};
+                  for (const [id, start] of d.starts) {
+                    preview[id] = {
+                      x: Math.min(0.97, Math.max(0.03, start.x + dnx)),
+                      y: Math.min(0.97, Math.max(0.03, start.y + dny)),
+                    };
+                  }
+                  liveDragNormRef.current = preview;
+                  setDragPreview(preview);
                 }}
                 onPointerUp={(e) => {
                   const d = cardDragRef.current;
@@ -846,9 +1077,17 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
                   const final = liveDragNormRef.current;
                   liveDragNormRef.current = null;
                   if (d.moved && final) {
-                    setMetricManualPosition(m.id, final);
+                    const entries = Object.entries(final).map(([id, pos]) => ({
+                      id,
+                      pos,
+                    }));
+                    if (entries.length > 1) {
+                      moveMetrics(entries);
+                    } else if (entries[0]) {
+                      setMetricPosition(entries[0].id, entries[0].pos);
+                    }
                   } else if (!d.moved) {
-                    onSelect(m);
+                    onSelect(m, e.shiftKey || e.metaKey || e.ctrlKey);
                   }
                 }}
                 onPointerCancel={(e) => {
@@ -882,6 +1121,12 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
         </div>
       </div>
 
+      <MetricsDataTable
+        open={dataTableOpen ?? false}
+        onClose={() => onCloseDataTable?.()}
+        axes={matrixAxes}
+        rows={points}
+      />
     </div>
   );
   },

@@ -116,7 +116,7 @@ export const BUILTIN_TEMPLATES: MatrixTemplate[] = [
   {
     id: "impact-maturity",
     name: "Impacto × madurez",
-    description: "Cruza la zona de impacto con la madurez de la métrica.",
+    description: "Prioriza impacto frente a madurez",
     accentColor: "#A855F7",
     canvas: {
       ...defaultBoardCanvas(),
@@ -126,7 +126,7 @@ export const BUILTIN_TEMPLATES: MatrixTemplate[] = [
   {
     id: "figma-layer",
     name: "Figma × capa",
-    description: "Disponibilidad en Figma cruzada con la capa de la métrica.",
+    description: "Disponibilidad en Figma por capa",
     accentColor: "#0EA5E9",
     canvas: {
       ...defaultBoardCanvas(),

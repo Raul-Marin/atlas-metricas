@@ -12,9 +12,10 @@ import type {
 import { SOURCE_TYPES } from "./constants";
 import { metricVizCategory, type VizCategory, VIZ_LEGEND } from "./quadrant-viz";
 
+/** Por defecto, una matriz nueva es un 2×2 de decisión: esfuerzo (X) × impacto (Y). */
 export const defaultMatrixAxes: MatrixAxesState = {
-  axisX: "measurementType",
-  axisY: "layer",
+  axisX: "esfuerzo",
+  axisY: "impacto",
 };
 
 /** Orden eje X: de izquierda a derecha */
@@ -132,6 +133,18 @@ export const MATRIX_AXIS_OPTIONS: {
   endHigh: string;
 }[] = [
   {
+    id: "impacto",
+    label: "Impacto",
+    endLow: "Alto impacto",
+    endHigh: "Bajo impacto",
+  },
+  {
+    id: "esfuerzo",
+    label: "Esfuerzo",
+    endLow: "Mucho esfuerzo",
+    endHigh: "Poco esfuerzo",
+  },
+  {
     id: "measurementType",
     label: "Tipo de medición",
     endLow: "Cualitativo",
@@ -204,6 +217,6 @@ export function axisEndLabels(axis: MatrixAxisId): { low: string; high: string }
 export function normalizeAxes(axes: MatrixAxesState): MatrixAxesState {
   if (axes.axisX !== axes.axisY) return axes;
   const fallbackY: MatrixAxisId =
-    axes.axisY === "layer" ? "measurementType" : "layer";
+    axes.axisX === "impacto" ? "esfuerzo" : "impacto";
   return { ...axes, axisY: fallbackY };
 }
