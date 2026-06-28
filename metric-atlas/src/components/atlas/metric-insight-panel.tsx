@@ -108,7 +108,7 @@ export function MetricInsightPanel({
               <button
                 type="button"
                 onClick={() => onOpenFullCard(metric)}
-                className="inline-flex items-center gap-2 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-[13px] font-medium tracking-[-0.01em] text-[#1e1e1e] shadow-sm hover:bg-[#f7f7f7]"
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-[#e6e6e6] bg-white px-3 py-2 text-[13px] font-medium tracking-[-0.01em] text-[#1e1e1e] shadow-sm hover:bg-[#f7f7f7]"
               >
                 Ficha completa
                 <ExternalLink className="h-3.5 w-3.5 opacity-60" />

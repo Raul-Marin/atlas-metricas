@@ -29,6 +29,7 @@ import { filterMetrics } from "@/lib/filters";
 import { useAtlasFilters } from "@/context/atlas-filters-context";
 import { FiltersBar } from "@/components/layout/filters-bar";
 import { FigJamBoard, type FigJamBoardHandle } from "./figjam-board";
+import { MetricCanvasCard } from "./metric-card";
 import { MetricInsightPanel } from "./metric-insight-panel";
 import { MetricsTray } from "./metrics-tray";
 import {
@@ -54,6 +55,7 @@ export function AtlasWorkspace({
 }) {
   const {
     filters,
+    colorCardsByCategory,
     excludedMetricIds,
     excludeMetrics,
     includeMetric,
@@ -295,12 +297,16 @@ export function AtlasWorkspace({
   const handleTraySelect = React.useCallback(
     (m: Metric) => {
       if (excludedMetricIds.includes(m.id)) {
+        // Fuera del canvas → añadir al centro y seleccionar.
         const center = figjamRef.current?.getViewportCenterNorm();
         if (center) includeMetricAt(m.id, center);
         else includeMetric(m.id);
+        setSelectedIds([m.id]);
+        setPrimaryId(m.id);
+      } else {
+        // Ya colocada → solo localizarla en el canvas (sin seleccionar).
+        figjamRef.current?.focusMetric?.(m.id);
       }
-      setSelectedIds([m.id]);
-      setPrimaryId(m.id);
     },
     [excludedMetricIds, includeMetric, includeMetricAt],
   );
@@ -317,6 +323,7 @@ export function AtlasWorkspace({
     metric: Metric;
     x: number;
     y: number;
+    overCanvas: boolean;
   } | null>(null);
 
   const handleMetricPointerDown = React.useCallback(
@@ -329,7 +336,12 @@ export function AtlasWorkspace({
         if (!d.moved && Math.hypot(ev.clientX - d.startX, ev.clientY - d.startY) > 5) {
           d.moved = true;
         }
-        if (d.moved) setTrayGhost({ metric: d.metric, x: ev.clientX, y: ev.clientY });
+        if (d.moved) {
+          // Sobre el canvas el fantasma se convierte en la ficha completa.
+          const overCanvas =
+            figjamRef.current?.screenToCanvasNorm(ev.clientX, ev.clientY) != null;
+          setTrayGhost({ metric: d.metric, x: ev.clientX, y: ev.clientY, overCanvas });
+        }
       };
       const onUp = (ev: PointerEvent) => {
         window.removeEventListener("pointermove", onMove);
@@ -548,6 +560,7 @@ export function AtlasWorkspace({
                 selectedId={primaryId}
                 onSelect={handleTraySelect}
                 onMetricPointerDown={handleMetricPointerDown}
+                cardColorByCategory={colorCardsByCategory}
                 variant="flat"
               />
             ) : (
@@ -603,7 +616,7 @@ export function AtlasWorkspace({
         {/* Main content column: canvas */}
         <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
           <div
-            className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-[#f3f3f3] p-3 md:p-4"
+            className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-[#f3f3f3] p-1.5 md:p-2"
             style={{
               backgroundImage:
                 "linear-gradient(180deg, rgba(255,255,255,0.45), transparent 24%)",
@@ -694,10 +707,20 @@ export function AtlasWorkspace({
 
       {trayGhost ? (
         <div
-          className="pointer-events-none fixed z-[60] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[#0d99ff]/40 bg-white/95 px-3 py-2 text-[12px] font-medium text-[#1e1e1e] shadow-[0_8px_24px_rgba(0,0,0,0.18)]"
+          className="pointer-events-none fixed z-[60] -translate-x-1/2 -translate-y-1/2"
           style={{ left: trayGhost.x, top: trayGhost.y }}
         >
-          {trayGhost.metric.shortName ?? trayGhost.metric.name}
+          {trayGhost.overCanvas ? (
+            <MetricCanvasCard
+              metric={trayGhost.metric}
+              colorByCategory={colorCardsByCategory}
+              className="shadow-[0_14px_34px_rgba(0,0,0,0.2)]"
+            />
+          ) : (
+            <span className="rounded-lg border border-[#0d99ff]/40 bg-white/95 px-3 py-2 text-[12px] font-medium text-[#1e1e1e] shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
+              {trayGhost.metric.shortName ?? trayGhost.metric.name}
+            </span>
+          )}
         </div>
       ) : null}
     </div>

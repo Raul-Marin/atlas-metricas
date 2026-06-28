@@ -12,16 +12,16 @@ import {
   singletonClustersFromPoints,
   type MapPoint,
 } from "@/lib/map-cluster";
-import {
-  metricVizCategory,
-  vizCategoryCardAccent,
-  VIZ_LEGEND,
-  type VizCategory,
-} from "@/lib/quadrant-viz";
+import { VIZ_LEGEND } from "@/lib/quadrant-viz";
 import { cn } from "@/lib/utils";
 import { toPng } from "html-to-image";
 import { Info, Maximize, Minus, Plus, RotateCcw } from "lucide-react";
 import { MetricsDataTable } from "./metrics-data-table";
+import {
+  MetricCardContent,
+  METRIC_CARD_BASE,
+  metricCardBoxStyle,
+} from "./metric-card";
 
 /** Tamaño lógico del canvas (px); el mapa ocupa todo el rectángulo y puedes desplazarte fuera. */
 const CANVAS_WORLD_W = 5600;
@@ -41,59 +41,6 @@ const FIGJAM_DOT_GRID = {
 function hashRot(id: string): number {
   void id;
   return 0;
-}
-
-function VizShape({
-  shape,
-  color,
-  size = 11,
-}: {
-  shape: (typeof VIZ_LEGEND)[number]["shape"];
-  color: string;
-  size?: number;
-}) {
-  const s = size;
-  switch (shape) {
-    case "diamond":
-      return (
-        <svg width={s} height={s} viewBox="0 0 12 12" aria-hidden className="shrink-0">
-          <path d="M6 1 L11 6 L6 11 L1 6 Z" fill={color} />
-        </svg>
-      );
-    case "pentagon":
-      return (
-        <svg width={s} height={s} viewBox="0 0 12 12" aria-hidden className="shrink-0">
-          <path d="M6 1 L10.2 4.3 L8.8 9.5 L3.2 9.5 L1.8 4.3 Z" fill={color} />
-        </svg>
-      );
-    case "bag":
-      return (
-        <svg width={s} height={s} viewBox="0 0 12 12" aria-hidden className="shrink-0">
-          <path
-            d="M3 4h6l.5 6.5c0 .8-.7 1.5-1.5 1.5h-4c-.8 0-1.5-.7-1.5-1.5L3 4z M4 4V3.5C4 2.1 5 1 6.5 1S9 2.1 9 3.5V4"
-            fill="none"
-            stroke={color}
-            strokeWidth={1.2}
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-    case "square":
-      return (
-        <svg width={s} height={s} viewBox="0 0 12 12" aria-hidden className="shrink-0">
-          <rect x="1.5" y="1.5" width="9" height="9" rx="1" fill={color} />
-        </svg>
-      );
-    case "circle":
-    case "dot":
-      return (
-        <svg width={s} height={s} viewBox="0 0 12 12" aria-hidden className="shrink-0">
-          <circle cx="6" cy="6" r={shape === "dot" ? 4.5 : 5} fill={color} />
-        </svg>
-      );
-    default:
-      return null;
-  }
 }
 
 type HintKey = "zoom" | "pan" | "card";
@@ -121,14 +68,8 @@ function HintItem({
   );
 }
 
-function shapeFor(cat: VizCategory) {
-  const row = VIZ_LEGEND.find((l) => l.key === cat);
-  if (!row) return null;
-  return <VizShape shape={row.shape} color={row.color} size={12} />;
-}
-
 function LegendFloat() {
-  const [open, setOpen] = React.useState(true);
+  const [open, setOpen] = React.useState(false);
 
   if (!open) {
     return (
@@ -137,7 +78,7 @@ function LegendFloat() {
         data-export-hide="true"
         onClick={() => setOpen(true)}
         aria-label="Mostrar leyenda de tipos"
-        className="absolute left-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-white/55 text-[#626262] shadow-md backdrop-blur-md transition-colors hover:bg-white/75 hover:text-[#1e1e1e]"
+        className="absolute left-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-white/55 text-[#626262] shadow-sm backdrop-blur-md transition-colors hover:bg-white/75 hover:text-[#1e1e1e]"
       >
         <Info className="h-4 w-4" />
       </button>
@@ -165,7 +106,11 @@ function LegendFloat() {
       <ul className="space-y-1 text-[#444]">
         {VIZ_LEGEND.map((row) => (
           <li key={row.key} className="flex items-center gap-2">
-            <VizShape shape={row.shape} color={row.color} size={10} />
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: row.color }}
+              aria-hidden
+            />
             {row.label}
           </li>
         ))}
@@ -185,6 +130,8 @@ export type FigJamBoardHandle = {
   /** Convierte un punto de pantalla a coordenadas normalizadas del canvas.
    *  Devuelve null si el punto está fuera del lienzo (no se debe colocar). */
   screenToCanvasNorm: (clientX: number, clientY: number) => { x: number; y: number } | null;
+  /** Centra la vista en una métrica concreta (sin cambiar el zoom). */
+  focusMetric: (metricId: string) => void;
 };
 
 type FigJamBoardProps = {
@@ -228,6 +175,10 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
   const [dragPreview, setDragPreview] = React.useState<
     Record<string, { x: number; y: number }> | null
   >(null);
+  // Métrica con "glow" transitorio (al localizarla); se desvanece tras ~1s.
+  const [glowId, setGlowId] = React.useState<string | null>(null);
+  const glowTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashRef = React.useRef<(id: string) => void>(() => {});
   const [hints, setHints] = React.useState<Record<HintKey, HintStatus>>({
     zoom: "pending",
     pan: "pending",
@@ -287,6 +238,14 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
   const frameNormRef = React.useRef<(pts: { x: number; y: number }[]) => void>(
     () => {},
   );
+  const clampPanRef = React.useRef<
+    (
+      next: { x: number; y: number },
+      zoom: number,
+      vpW: number,
+      vpH: number,
+    ) => { x: number; y: number }
+  >((next) => next);
 
   React.useImperativeHandle(
     forwardedRef,
@@ -343,6 +302,38 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
           x: Math.min(0.97, Math.max(0.03, (lx - p.x) / z / CANVAS_WORLD_W)),
           y: Math.min(0.97, Math.max(0.03, (ly - p.y) / z / CANVAS_WORLD_H)),
         };
+      },
+      focusMetric: (metricId) => {
+        const vp = viewportRef.current;
+        if (!vp) return;
+        const pos = layoutMapRef.current.get(metricId);
+        if (!pos) return;
+        const w = vp.clientWidth;
+        const h = vp.clientHeight;
+        if (w < 8 || h < 8) return;
+        const z = zoomRef.current;
+        const p = panRef.current;
+        const cx = pos.x * CANVAS_WORLD_W;
+        const cy = pos.y * CANVAS_WORLD_H;
+        // Posición en pantalla del centro de la ficha.
+        const sx = cx * z + p.x;
+        const sy = cy * z + p.y;
+        // Si ya está cómodamente visible (con margen para el tamaño de la ficha):
+        // la iluminamos ya mismo y no movemos la vista.
+        const mx = 130;
+        const my = 70;
+        if (sx >= mx && sx <= w - mx && sy >= my && sy <= h - my) {
+          flashRef.current(metricId);
+          return;
+        }
+        // Si no, paneamos (animado, mismo zoom) y el glow arranca cuando aparece.
+        const newPan = clampPanRef.current(
+          { x: w / 2 - cx * z, y: h / 2 - cy * z },
+          z,
+          w,
+          h,
+        );
+        animatePanToRef.current(newPan, 420, () => flashRef.current(metricId));
       },
     }),
     // El handle solo usa refs (frameNormRef/pointsRef/...); se crea una vez.
@@ -513,6 +504,67 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
     [clampPan, getMinZoom],
   );
   frameNormRef.current = frameNorm;
+  clampPanRef.current = clampPan;
+
+  // Paneo animado con easing (ease-in-out) para "localizar" una métrica con suavidad.
+  const panAnimRef = React.useRef<number | null>(null);
+  const cancelPanAnim = React.useCallback(() => {
+    if (panAnimRef.current != null) {
+      cancelAnimationFrame(panAnimRef.current);
+      panAnimRef.current = null;
+    }
+  }, []);
+  const animatePanTo = React.useCallback(
+    (target: { x: number; y: number }, duration = 420, onDone?: () => void) => {
+      cancelPanAnim();
+      const start = { ...panRef.current };
+      const dx = target.x - start.x;
+      const dy = target.y - start.y;
+      if (Math.hypot(dx, dy) < 0.5) {
+        panRef.current = target;
+        setPan(target);
+        onDone?.();
+        return;
+      }
+      const t0 = performance.now();
+      // easeInOutQuad
+      const ease = (t: number) =>
+        t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      const step = (now: number) => {
+        const p = Math.min(1, (now - t0) / duration);
+        const e = ease(p);
+        const next = { x: start.x + dx * e, y: start.y + dy * e };
+        panRef.current = next;
+        setPan(next);
+        if (p < 1) {
+          panAnimRef.current = requestAnimationFrame(step);
+        } else {
+          panAnimRef.current = null;
+          onDone?.();
+        }
+      };
+      panAnimRef.current = requestAnimationFrame(step);
+    },
+    [cancelPanAnim],
+  );
+  const animatePanToRef = React.useRef(animatePanTo);
+  animatePanToRef.current = animatePanTo;
+
+  // Glow transitorio: ilumina la ficha y a ~1s se desvanece.
+  const flash = React.useCallback((id: string) => {
+    setGlowId(id);
+    if (glowTimerRef.current) clearTimeout(glowTimerRef.current);
+    glowTimerRef.current = setTimeout(() => setGlowId(null), 550);
+  }, []);
+  flashRef.current = flash;
+
+  React.useEffect(
+    () => () => {
+      cancelPanAnim();
+      if (glowTimerRef.current) clearTimeout(glowTimerRef.current);
+    },
+    [cancelPanAnim],
+  );
 
   React.useEffect(() => {
     const el = viewportRef.current;
@@ -521,6 +573,10 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
       e.preventDefault();
       // Mientras se arrastra una ficha el wheel no debe zoomear el canvas.
       if (cardDragRef.current) return;
+      if (panAnimRef.current != null) {
+        cancelAnimationFrame(panAnimRef.current);
+        panAnimRef.current = null;
+      }
       const rect = el.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
@@ -580,6 +636,7 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
     if (e.button !== 0) return;
     // Si ya hay una ficha capturada, no arrancamos pan paralelo.
     if (cardDragRef.current) return;
+    cancelPanAnim();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     // Shift + arrastrar el fondo = selección por recuadro (lasso). Si no, pan.
     if (e.shiftKey && onBoxSelect) {
@@ -753,7 +810,7 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
 
       <div
         ref={viewportRef}
-        className="absolute inset-0 touch-none overflow-hidden rounded-[24px] border border-[#dcdcdc] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
+        className="absolute inset-0 touch-none overflow-hidden rounded-[12px] border border-[#dcdcdc] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
         style={{
           background:
             "radial-gradient(circle at top, rgba(255,255,255,0.8), transparent 42%), linear-gradient(180deg, #fafafa 0%, #f3f3f3 100%)",
@@ -970,56 +1027,43 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
             }
 
             const m = c.metrics[0]!;
-            const cat = metricVizCategory(m);
-            const legendRow = VIZ_LEGEND.find((row) => row.key === cat);
-            const label = m.shortName ?? m.name;
             const dragging = dragPreview?.[m.id] != null;
             const rot = dragging ? 0 : hashRot(m.id);
             const selected = selectedIds.has(m.id);
-            const accentColor = legendRow?.color ?? "#9ca3af";
-            const cardAccent = colorCardsByCategory
-              ? vizCategoryCardAccent(cat, { selected })
-              : undefined;
+            const glow = glowId === m.id;
 
             return (
               <button
                 key={m.id}
                 type="button"
                 className={cn(
-                  "pointer-events-auto absolute z-[6] w-[220px] touch-none rounded-xl border px-3 py-2.5 text-left shadow-[0_6px_18px_rgba(0,0,0,0.08)] transition-[box-shadow,transform,border-color,background-color] duration-150 ease-out select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/25",
+                  "pointer-events-auto absolute z-[6] touch-none select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/25",
+                  METRIC_CARD_BASE,
                   dragging
-                    ? "z-30 cursor-grabbing shadow-[0_12px_28px_rgba(0,0,0,0.14)]"
+                    ? "z-30 cursor-grabbing"
                     : "cursor-grab hover:z-20 hover:shadow-[0_10px_24px_rgba(0,0,0,0.12)] active:scale-[0.99]",
-                  "border-[#cfc7bb] bg-white",
                   selected
-                    ? cn(
-                        "z-10 ring-2 ring-[#0d99ff] ring-offset-2 ring-offset-[#f5f5f5]",
-                        "border-[#0d99ff]/40",
-                      )
+                    ? "z-10 ring-2 ring-[#0d99ff] ring-offset-2 ring-offset-[#f5f5f5] border-[#0d99ff]/40"
                     : "hover:bg-white",
                 )}
                 style={{
                   left: c.x * CANVAS_WORLD_W,
                   top: c.y * CANVAS_WORLD_H,
                   transform: `translate(-50%, -50%) rotate(${rot}deg)`,
-                  backgroundColor: colorCardsByCategory
-                    ? selected
-                      ? cardAccent?.backgroundColor
-                      : "rgba(255,255,255,0.94)"
-                    : "#fffdf9",
-                  borderColor: selected
-                    ? "#0d99ff"
-                    : colorCardsByCategory
-                      ? cardAccent?.borderColor
-                      : "#cfc7bb",
-                  boxShadow: colorCardsByCategory
-                    ? `inset 5px 0 0 ${accentColor}, 0 6px 18px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.85)`
-                    : "0 6px 18px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.88)",
+                  // El glow entra rápido (120ms) y se desvanece suave (650ms).
+                  transition: `box-shadow ${glow ? 120 : 650}ms ease-out, transform 150ms ease-out, border-color 220ms ease-out, background-color 220ms ease-out`,
+                  ...metricCardBoxStyle({
+                    metric: m,
+                    selected,
+                    colorByCategory: colorCardsByCategory,
+                    glow,
+                  }),
                 }}
                 title="Arrastra para colocar a mano · Clic para detalle"
                 onPointerDown={(e) => {
                   if (e.button !== 0) return;
                   e.stopPropagation();
+                  cancelPanAnim();
                   // Arrastre en grupo solo si la ficha ya forma parte de una
                   // selección múltiple; si no, se arrastra solo esta ficha.
                   const groupDrag = selectedIds.has(m.id) && selectedIds.size > 1;
@@ -1099,22 +1143,7 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
                   }
                 }}
               >
-                <span className="pointer-events-none block">
-                  <span className="mb-1 flex items-center gap-2">
-                    <span className="mt-0.5">{shapeFor(cat)}</span>
-                    <span className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-[#757575]">
-                      {legendRow?.label ?? "Métrica"}
-                    </span>
-                    {m.archived ? (
-                      <span className="ml-auto rounded-md bg-[#fff3cd] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-[#8a6d3b]">
-                        Obsoleta
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="block text-[13px] font-semibold leading-[1.35] tracking-[-0.01em] text-[#1e1e1e]">
-                    {label}
-                  </span>
-                </span>
+                <MetricCardContent metric={m} />
               </button>
             );
           })}
