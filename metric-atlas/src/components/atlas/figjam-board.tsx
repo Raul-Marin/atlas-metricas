@@ -15,13 +15,36 @@ import {
 import { VIZ_LEGEND } from "@/lib/quadrant-viz";
 import { cn } from "@/lib/utils";
 import { toPng } from "html-to-image";
-import { Info, Maximize, Minus, Plus, RotateCcw } from "lucide-react";
+import { BarChart3, Info, Maximize, Minus, Plus, RotateCcw } from "lucide-react";
+import dynamic from "next/dynamic";
 import { MetricsDataTable } from "./metrics-data-table";
+// Carga diferida: los gráficos (y recharts) solo se descargan al abrir una vista.
+const MetricRadarView = dynamic(
+  () => import("./metric-radar-view").then((m) => m.MetricRadarView),
+  { ssr: false },
+);
+const MetricRankingView = dynamic(
+  () => import("./metric-ranking-view").then((m) => m.MetricRankingView),
+  { ssr: false },
+);
+const MetricHeatmapView = dynamic(
+  () => import("./metric-heatmap-view").then((m) => m.MetricHeatmapView),
+  { ssr: false },
+);
 import {
   MetricCardContent,
   METRIC_CARD_BASE,
   metricCardBoxStyle,
 } from "./metric-card";
+
+/** Vistas del canvas: 2×2 normal o un gráfico. */
+type CanvasView = "normal" | "radar" | "ranking" | "heatmap";
+const CHART_VIEWS: { id: CanvasView; label: string }[] = [
+  { id: "normal", label: "Normal (2×2)" },
+  { id: "radar", label: "Radar por métrica" },
+  { id: "ranking", label: "Ranking (barras)" },
+  { id: "heatmap", label: "Heatmap" },
+];
 
 /** Tamaño lógico del canvas (px); el mapa ocupa todo el rectángulo y puedes desplazarte fuera. */
 const CANVAS_WORLD_W = 5600;
@@ -175,6 +198,9 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
   const [dragPreview, setDragPreview] = React.useState<
     Record<string, { x: number; y: number }> | null
   >(null);
+  // Vista del canvas (2×2 normal o un gráfico) + menú del selector.
+  const [chartView, setChartView] = React.useState<CanvasView>("normal");
+  const [graphMenuOpen, setGraphMenuOpen] = React.useState(false);
   // Métrica con "glow" transitorio (al localizarla); se desvanece tras ~1s.
   const [glowId, setGlowId] = React.useState<string | null>(null);
   const glowTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -566,6 +592,17 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
     [cancelPanAnim],
   );
 
+  // Cierra el submenú de vistas/gráficos al hacer clic fuera.
+  React.useEffect(() => {
+    if (!graphMenuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest("[data-graph-menu]")) setGraphMenuOpen(false);
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [graphMenuOpen]);
+
   React.useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -820,8 +857,9 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
       >
         <div
           data-export-hide="true"
-          className="absolute right-2 top-2 z-20 flex flex-col gap-1 rounded-full border border-white/40 bg-white/55 p-1 shadow-sm backdrop-blur-md"
+          className="absolute right-2 top-2 z-20 flex flex-col items-end gap-2"
         >
+          <div className="flex flex-col gap-1 rounded-full border border-white/40 bg-white/55 p-1 shadow-sm backdrop-blur-md">
           <button
             type="button"
             className="rounded-full p-1.5 text-[#626262] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[#f0f0f0] hover:text-[#1e1e1e] hover:scale-[1.03] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0d99ff]/20"
@@ -891,9 +929,50 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
           >
             <Maximize className="h-4 w-4" />
           </button>
+          </div>
+          <div className="relative" data-graph-menu>
+            <button
+              type="button"
+              onClick={() => setGraphMenuOpen((v) => !v)}
+              aria-label="Vistas y gráficos"
+              title="Vistas y gráficos"
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full border border-white/40 shadow-sm backdrop-blur-md transition-colors",
+                chartView !== "normal"
+                  ? "bg-[#0d99ff] text-white hover:bg-[#0b87e0]"
+                  : "bg-white/55 text-[#626262] hover:bg-white/75 hover:text-[#1e1e1e]",
+              )}
+            >
+              <BarChart3 className="h-4 w-4" />
+            </button>
+            {graphMenuOpen ? (
+              <div className="absolute right-[calc(100%+8px)] top-0 min-w-[180px] rounded-lg border border-[#e6e6e6] bg-white py-1 shadow-lg">
+                {CHART_VIEWS.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => {
+                      setChartView(v.id);
+                      setGraphMenuOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]",
+                      chartView === v.id ? "text-[#0d99ff]" : "text-[#1e1e1e]",
+                    )}
+                  >
+                    {v.label}
+                    {chartView === v.id ? (
+                      <span className="text-[#0d99ff]">✓</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {(() => {
+          if (chartView !== "normal") return null;
           const row1 = [
             { key: "zoom" as const, label: "Rueda: zoom", status: hints.zoom },
             { key: "pan" as const, label: "Arrastra el fondo", status: hints.pan },
@@ -953,6 +1032,28 @@ export const FigJamBoard = React.forwardRef<FigJamBoardHandle, FigJamBoardProps>
               height: selectBox.h,
             }}
           />
+        ) : null}
+
+        {chartView !== "normal" ? (
+          <div className="absolute inset-0 z-[18] overflow-hidden bg-white">
+            {chartView === "radar" ? (
+              <MetricRadarView
+                metrics={renderableMetrics}
+                metricScores={metricScores}
+                selectedId={[...selectedIds][0] ?? null}
+              />
+            ) : chartView === "ranking" ? (
+              <MetricRankingView
+                metrics={renderableMetrics}
+                metricScores={metricScores}
+              />
+            ) : chartView === "heatmap" ? (
+              <MetricHeatmapView
+                metrics={renderableMetrics}
+                metricScores={metricScores}
+              />
+            ) : null}
+          </div>
         ) : null}
 
         <div
