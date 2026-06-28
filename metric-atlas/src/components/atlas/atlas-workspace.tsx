@@ -9,6 +9,7 @@ import {
   Copy,
   Download,
   FileImage,
+  FileSpreadsheet,
   FileText,
   Loader2,
   Redo2,
@@ -26,6 +27,8 @@ import {
 } from "@/lib/boards/firestore";
 import type { Metric } from "@/lib/types";
 import { filterMetrics } from "@/lib/filters";
+import { resolveMetricLayout } from "@/lib/metric-layout";
+import { MATRIX_AXIS_OPTIONS } from "@/lib/matrix-axes";
 import { useAtlasFilters } from "@/context/atlas-filters-context";
 import { FiltersBar } from "@/components/layout/filters-bar";
 import { FigJamBoard, type FigJamBoardHandle } from "./figjam-board";
@@ -56,6 +59,8 @@ export function AtlasWorkspace({
   const {
     filters,
     colorCardsByCategory,
+    matrixAxes,
+    metricScores,
     excludedMetricIds,
     excludeMetrics,
     includeMetric,
@@ -137,6 +142,38 @@ export function AtlasWorkspace({
     },
     [exporting, title],
   );
+
+  // Exporta la tabla de datos del canvas (métrica + valor en los dos ejes activos) a CSV.
+  const handleExportCsv = React.useCallback(() => {
+    setExportOpen(false);
+    const safe = title.replace(/[^\p{L}\p{N}\-_ ]/gu, "").trim() || "matrix";
+    const xLabel =
+      MATRIX_AXIS_OPTIONS.find((o) => o.id === matrixAxes.axisX)?.label ?? "Eje X";
+    const yLabel =
+      MATRIX_AXIS_OPTIONS.find((o) => o.id === matrixAxes.axisY)?.label ?? "Eje Y";
+    const layout = resolveMetricLayout(canvasMetrics, matrixAxes, metricScores);
+    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = [[esc("Métrica"), esc(xLabel), esc(yLabel)].join(",")];
+    for (const m of canvasMetrics) {
+      const pos = layout.get(m.id) ?? { x: 0.5, y: 0.5 };
+      lines.push(
+        [
+          esc(m.shortName ?? m.name),
+          Math.round(pos.x * 100),
+          Math.round(pos.y * 100),
+        ].join(","),
+      );
+    }
+    // BOM para que Excel respete los acentos.
+    const csv = "﻿" + lines.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safe}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [canvasMetrics, matrixAxes, metricScores, title]);
 
   React.useEffect(() => {
     if (!boardId) return;
@@ -510,6 +547,14 @@ export function AtlasWorkspace({
                   >
                     <FileText className="h-3.5 w-3.5 text-[#757575]" />
                     Documento PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportCsv}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#1e1e1e] transition-colors hover:bg-[#f7f7f7]"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5 text-[#757575]" />
+                    Tabla CSV
                   </button>
                 </div>
               ) : null}
