@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import type { Metric } from "@/lib/types";
-import { isFirebaseConfigured } from "@/lib/firebase/client";
-import { subscribeToMetrics } from "./firestore";
+import { getActiveContext } from "@/lib/context/registry";
+import { definitionToMetric } from "@/lib/context/adapter";
 
 type MetricsContextValue = {
   metrics: Metric[];
@@ -18,27 +18,14 @@ const MetricsContext = React.createContext<MetricsContextValue | undefined>(
 );
 
 export function MetricsProvider({ children }: { children: React.ReactNode }) {
-  const [metrics, setMetrics] = React.useState<Metric[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<Error | null>(null);
-
-  React.useEffect(() => {
-    if (!isFirebaseConfigured) {
-      setLoading(false);
-      return;
-    }
-    const unsub = subscribeToMetrics(
-      (list) => {
-        setMetrics(list);
-        setLoading(false);
-      },
-      (err) => {
-        setError(err);
-        setLoading(false);
-      },
-    );
-    return unsub;
-  }, []);
+  // El catálogo es el pack del contexto activo (código), no Firestore. Esto
+  // permite iterar el contenido real rápido y hace que cada métrica en runtime
+  // lleve `attributes`/`ficha` (lo que consume el motor de matrices).
+  const [metrics] = React.useState<Metric[]>(() =>
+    getActiveContext().metrics.map(definitionToMetric),
+  );
+  const loading = false;
+  const error: Error | null = null;
 
   const activeMetrics = React.useMemo(
     () => metrics.filter((m) => !m.archived),

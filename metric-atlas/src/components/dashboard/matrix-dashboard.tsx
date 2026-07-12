@@ -40,8 +40,9 @@ import {
 } from "@/components/metric/metrics-library";
 import { MetricDetail } from "@/components/metric/metric-detail";
 import { useMetrics } from "@/lib/metrics/provider";
-import { useTemplates } from "@/lib/templates/provider";
-import type { MatrixTemplate } from "@/lib/templates/firestore";
+import { useMetricContext } from "@/lib/context/provider";
+import { templateDefToCanvas } from "@/lib/context/adapter";
+import type { MatrixTemplateDef } from "@/lib/context/types";
 import type { Metric } from "@/lib/types";
 import {
   createBoard,
@@ -174,7 +175,8 @@ export function MatrixDashboard() {
   const [tab, setTab] = React.useState<"home" | "docs">("home");
   const [docsMetric, setDocsMetric] = React.useState<Metric | null>(null);
   const { activeMetrics: allMetrics } = useMetrics();
-  const { activeTemplates } = useTemplates();
+  const metricContext = useMetricContext();
+  const activeTemplates = metricContext.templates;
   const docsFilters = useMetricsFilters(allMetrics);
 
   React.useEffect(() => {
@@ -252,9 +254,13 @@ export function MatrixDashboard() {
     goBoard(b.id);
   };
 
-  const onTemplate = async (template: MatrixTemplate) => {
+  const onTemplate = async (template: MatrixTemplateDef) => {
     if (!user) return;
-    const board = await createBoard(user.uid, template.name, template.canvas);
+    const canvas = templateDefToCanvas(
+      template,
+      allMetrics.map((m) => m.id),
+    );
+    const board = await createBoard(user.uid, template.name, canvas);
     if (targetSpaceId) {
       await setBoardSpace(user.uid, board.id, targetSpaceId);
     }
@@ -727,9 +733,7 @@ export function MatrixDashboard() {
                     </span>
                     <span className="mt-1 flex items-center gap-1.5 text-[10px] leading-tight text-[#757575]">
                       <Sparkles className="h-3 w-3 shrink-0 text-violet-500" />
-                      <span className="truncate">
-                        {template.description ?? "Plantilla guardada"}
-                      </span>
+                      <span className="line-clamp-2">{template.purpose}</span>
                     </span>
                   </div>
                 </button>

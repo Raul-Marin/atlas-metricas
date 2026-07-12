@@ -21,6 +21,18 @@ function ListBlock({ title, items }: { title: string; items?: string[] }) {
   );
 }
 
+function MetaChip({ label, value }: { label: string; value?: string }) {
+  if (!value) return null;
+  return (
+    <div className="rounded-md border border-[#eee] bg-[#fafafa] px-2 py-1.5">
+      <div className="text-[9px] font-semibold uppercase tracking-[0.06em] text-[#949494]">
+        {label}
+      </div>
+      <div className="mt-0.5 text-[11px] leading-tight text-[#1e1e1e]">{value}</div>
+    </div>
+  );
+}
+
 export function MetricInsightPanel({
   metric,
   onClose,
@@ -103,6 +115,30 @@ export function MetricInsightPanel({
 
             <ListBlock title="Automatización" items={metric.automationIdeas} />
             <ListBlock title="Riesgos / sesgos" items={metric.risksBiases} />
+
+            {metric.ficha?.frecuencia ||
+            metric.ficha?.esfuerzo ||
+            metric.ficha?.confianza ? (
+              <div className="grid grid-cols-3 gap-2">
+                <MetaChip label="Frecuencia" value={metric.ficha?.frecuencia} />
+                <MetaChip label="Esfuerzo" value={metric.ficha?.esfuerzo} />
+                <MetaChip label="Confianza" value={metric.ficha?.confianza} />
+              </div>
+            ) : null}
+
+            <ListBlock title="Mejor cruzarla con" items={metric.ficha?.cruzarCon} />
+            <ListBlock title="Audiencia" items={metric.ficha?.audience} />
+
+            {metric.ficha?.decision ? (
+              <div className="space-y-2">
+                <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#757575]">
+                  Decisión que permite tomar
+                </h3>
+                <p className="text-[12px] leading-[1.55] text-[#444]">
+                  {metric.ficha.decision}
+                </p>
+              </div>
+            ) : null}
 
             {onOpenFullCard ? (
               <button

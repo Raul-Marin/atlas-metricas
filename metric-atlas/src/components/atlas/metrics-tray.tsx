@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { Metric } from "@/lib/types";
 import { metricVizCategory, VIZ_LEGEND } from "@/lib/quadrant-viz";
+import { useMetricContext } from "@/lib/context/provider";
 import { getMetricIcon } from "@/data/metric-icons";
 import { cn } from "@/lib/utils";
 import { MetricCanvasCard } from "./metric-card";
@@ -32,6 +33,7 @@ export function MetricsTray({
   variant?: "card" | "flat";
 }) {
   const [query, setQuery] = React.useState("");
+  const context = useMetricContext();
   const sectionRef = React.useRef<HTMLElement>(null);
   const [hover, setHover] = React.useState<{ metric: Metric; top: number } | null>(
     null,
@@ -52,6 +54,25 @@ export function MetricsTray({
 
   const flat = variant === "flat";
   const canHover = !!onMetricPointerDown;
+
+  // Biblioteca agrupada por las categorías del contexto (con contador).
+  const groups = React.useMemo(() => {
+    const known = new Set(context.categories.map((c) => c.id));
+    const byCat = context.categories.map((cat) => ({
+      cat,
+      items: filtered.filter((m) => m.attributes?.categoria === cat.id),
+    }));
+    const otros = filtered.filter(
+      (m) => !known.has(String(m.attributes?.categoria ?? "")),
+    );
+    if (otros.length) {
+      byCat.push({
+        cat: { id: "__otros", label: "Otras", color: "#9ca3af" },
+        items: otros,
+      });
+    }
+    return byCat.filter((g) => g.items.length > 0);
+  }, [context.categories, filtered]);
 
   const clearHover = React.useCallback(() => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
@@ -89,73 +110,90 @@ export function MetricsTray({
 
       <div
         className={cn(
-          "grid grid-cols-3 gap-1.5 overflow-y-auto pr-1",
+          "flex flex-col gap-3 overflow-y-auto pr-1",
           flat ? "min-h-0 flex-1" : "max-h-[46dvh]",
         )}
       >
-        {filtered.map((metric) => {
-          const selected = selectedId === metric.id;
-          const excluded = excludedIds?.includes(metric.id) ?? false;
-          const placed = !excluded; // ya está en el canvas
-          // Solo las que NO están colocadas se pueden arrastrar/añadir.
-          const draggable = !!onMetricPointerDown && excluded;
-          const Icon = getMetricIcon(metric.id);
+        {groups.map(({ cat, items }) => (
+          <div key={cat.id}>
+            <div className="mb-1.5 flex items-center gap-1.5 px-0.5">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: cat.color ?? "#9ca3af" }}
+                aria-hidden
+              />
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[#757575]">
+                {cat.label}
+              </span>
+              <span className="text-[10px] text-[#b0b0b0]">{items.length}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {items.map((metric) => {
+                const selected = selectedId === metric.id;
+                const excluded = excludedIds?.includes(metric.id) ?? false;
+                const placed = !excluded; // ya está en el canvas
+                // Solo las que NO están colocadas se pueden arrastrar/añadir.
+                const draggable = !!onMetricPointerDown && excluded;
+                const Icon = getMetricIcon(metric.id);
 
-          return (
-            <button
-              key={metric.id}
-              type="button"
-              onClick={draggable ? undefined : () => onSelect(metric)}
-              onPointerDown={
-                draggable
-                  ? (e) => {
-                      clearHover();
-                      if (e.button === 0) onMetricPointerDown!(metric, e);
+                return (
+                  <button
+                    key={metric.id}
+                    type="button"
+                    onClick={draggable ? undefined : () => onSelect(metric)}
+                    onPointerDown={
+                      draggable
+                        ? (e) => {
+                            clearHover();
+                            if (e.button === 0) onMetricPointerDown!(metric, e);
+                          }
+                        : undefined
                     }
-                  : undefined
-              }
-              onKeyDown={
-                draggable
-                  ? (e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onSelect(metric);
-                      }
+                    onKeyDown={
+                      draggable
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onSelect(metric);
+                            }
+                          }
+                        : undefined
                     }
-                  : undefined
-              }
-              onMouseEnter={(e) => scheduleHover(metric, e.currentTarget)}
-              onMouseLeave={clearHover}
-              title={
-                placed
-                  ? "Ya en el canvas · clic para localizarla"
-                  : "Arrastra al canvas · clic para añadir"
-              }
-              className={cn(
-                "flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border p-1 text-center transition-[box-shadow,transform,border-color,opacity] duration-150 ease-out",
-                selected
-                  ? "border-[#0d99ff] bg-white shadow-[0_0_0_2px_rgba(13,153,255,0.18)]"
-                  : placed
-                    ? "border-[#ececec] bg-[#fafafa] opacity-55 hover:border-[#d9d9d9] hover:opacity-100"
-                    : "border-[#e6e6e6] bg-white hover:translate-y-[-1px] hover:border-[#d4d4d4] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)]",
-              )}
-            >
-              <span className="flex h-5 w-5 items-center justify-center">
-                <Icon
-                  className="h-[18px] w-[18px]"
-                  style={{ color: vizColor(metric) }}
-                  aria-hidden
-                />
-              </span>
-              <span className="line-clamp-2 w-full text-[9px] font-medium leading-[1.15] text-[#1e1e1e]">
-                {metric.shortName ?? metric.name}
-              </span>
-            </button>
-          );
-        })}
+                    onMouseEnter={(e) => scheduleHover(metric, e.currentTarget)}
+                    onMouseLeave={clearHover}
+                    title={
+                      placed
+                        ? "Ya en el canvas · clic para localizarla"
+                        : "Arrastra al canvas · clic para añadir"
+                    }
+                    className={cn(
+                      "flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border p-1 text-center transition-[box-shadow,transform,border-color,opacity] duration-150 ease-out",
+                      selected
+                        ? "border-[#0d99ff] bg-white shadow-[0_0_0_2px_rgba(13,153,255,0.18)]"
+                        : placed
+                          ? "border-[#ececec] bg-[#fafafa] opacity-55 hover:border-[#d9d9d9] hover:opacity-100"
+                          : "border-[#e6e6e6] bg-white hover:translate-y-[-1px] hover:border-[#d4d4d4] hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)]",
+                    )}
+                  >
+                    <span className="flex h-5 w-5 items-center justify-center">
+                      <Icon
+                        className="h-[18px] w-[18px]"
+                        style={{ color: vizColor(metric) }}
+                        aria-hidden
+                      />
+                    </span>
+                    <span className="line-clamp-2 w-full text-[9px] font-medium leading-[1.15] text-[#1e1e1e]">
+                      {metric.shortName ?? metric.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
 
         {filtered.length === 0 ? (
-          <p className="col-span-3 rounded-md border border-dashed border-[#d8d8d8] px-3 py-4 text-center text-[11px] text-[#757575]">
+          <p className="rounded-md border border-dashed border-[#d8d8d8] px-3 py-4 text-center text-[11px] text-[#757575]">
             No hay métricas con esa búsqueda.
           </p>
         ) : null}
