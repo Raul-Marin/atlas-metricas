@@ -14,6 +14,7 @@ import {
   FolderInput,
   Home,
   Image as ImageIcon,
+  Info,
   LayoutGrid,
   List,
   LogOut,
@@ -21,7 +22,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Sparkles,
   Star,
   Trash2,
   X,
@@ -172,6 +172,21 @@ export function MatrixDashboard() {
   const [menuId, setMenuId] = React.useState<string | null>(null);
   const [moveBoardId, setMoveBoardId] = React.useState<string | null>(null);
   const [coverBoardId, setCoverBoardId] = React.useState<string | null>(null);
+  const [infoTplId, setInfoTplId] = React.useState<string | null>(null);
+
+  // Cierra el tooltip de descripción de plantilla al hacer clic fuera.
+  React.useEffect(() => {
+    if (!infoTplId) return;
+    const onDocClick = (e: MouseEvent) => {
+      const path = e.composedPath?.() ?? [];
+      const inside = path.some(
+        (n) => n instanceof HTMLElement && n.dataset?.tplInfo !== undefined,
+      );
+      if (!inside) setInfoTplId(null);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [infoTplId]);
   const [userMenuOpen, setUserMenuOpen] = React.useState(false);
   const [spaceDraft, setSpaceDraft] = React.useState("");
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
@@ -181,7 +196,6 @@ export function MatrixDashboard() {
   const [docsMetric, setDocsMetric] = React.useState<Metric | null>(null);
   const { activeMetrics: allMetrics } = useMetrics();
   const metricContext = useMetricContext();
-  const activeTemplates = metricContext.templates;
   const docsFilters = useMetricsFilters(allMetrics);
 
   React.useEffect(() => {
@@ -727,51 +741,65 @@ export function MatrixDashboard() {
             <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#757575]">
               Plantillas de inicio
             </h2>
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              <button
-                type="button"
-                onClick={onCreateBlank}
-                className="flex h-[140px] w-[160px] shrink-0 flex-col items-center justify-center rounded-lg border-2 border-dashed border-[#cfcfcf] bg-white text-[#757575] transition-[border-color,background-color,box-shadow,transform] duration-150 ease-out hover:translate-y-[-1px] hover:border-[#0d99ff]/50 hover:bg-[#f7f7f7] hover:shadow-[0_6px_18px_rgba(0,0,0,0.05)] active:translate-y-0"
-              >
-                <Plus className="mb-2 h-8 w-8" />
-                <span className="text-xs font-medium">Matrix en blanco</span>
-              </button>
-              {activeTemplates.map((template) => (
-                <button
-                  key={template.id}
-                  type="button"
-                  onClick={() => onTemplate(template)}
-                  className="flex h-[140px] w-[160px] shrink-0 flex-col overflow-hidden rounded-lg border border-[#e6e6e6] bg-white text-left shadow-sm transition-[box-shadow,transform,border-color] duration-150 ease-out hover:translate-y-[-1px] hover:border-[#d9d9d9] hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] active:translate-y-0"
-                >
-                  {(() => {
-                    const src = metricContext.covers.find(
-                      (c) => c.id === template.cover,
-                    )?.src;
-                    return src ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={src}
-                        alt=""
-                        className="aspect-[16/10] w-full bg-[#f3f3f3] object-cover"
-                      />
-                    ) : (
-                      <BoardThumbnail
-                        color={template.accentColor ?? thumbColor(template.id)}
-                        className="aspect-[16/10] w-full"
-                      />
-                    );
-                  })()}
-                  <div className="flex flex-1 flex-col justify-center px-3.5">
-                    <span className="line-clamp-1 text-[12px] font-semibold leading-tight tracking-[-0.01em]">
-                      {template.name}
-                    </span>
-                    <span className="mt-1 flex items-center gap-1.5 text-[10px] leading-tight text-[#757575]">
-                      <Sparkles className="h-3 w-3 shrink-0 text-violet-500" />
-                      <span className="line-clamp-2">{template.purpose}</span>
-                    </span>
+            <div className="flex flex-wrap justify-center gap-3">
+              {metricContext.objectives.map((obj) => {
+                const template = metricContext.templates.find(
+                  (t) => t.id === obj.matrixTemplateId,
+                );
+                if (!template) return null;
+                const src = metricContext.covers.find(
+                  (c) => c.id === template.cover,
+                )?.src;
+                const infoOpen = infoTplId === obj.id;
+                return (
+                  <div key={obj.id} className="relative h-[140px] w-[160px]">
+                    <button
+                      type="button"
+                      onClick={() => onTemplate(template)}
+                      className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-[#e6e6e6] bg-white text-left shadow-sm transition-[box-shadow,transform,border-color] duration-150 ease-out hover:translate-y-[-1px] hover:border-[#d9d9d9] hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] active:translate-y-0"
+                    >
+                      {src ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={src}
+                          alt=""
+                          className="aspect-[16/10] w-full bg-[#f3f3f3] object-cover"
+                        />
+                      ) : (
+                        <BoardThumbnail
+                          color={template.accentColor ?? thumbColor(template.id)}
+                          className="aspect-[16/10] w-full"
+                        />
+                      )}
+                      <div className="flex flex-1 items-center px-3">
+                        <span className="line-clamp-2 text-[12px] font-semibold leading-tight tracking-[-0.01em] text-[#1e1e1e]">
+                          {obj.label}
+                        </span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      data-tpl-info
+                      aria-label="Descripción de la plantilla"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setInfoTplId((prev) => (prev === obj.id ? null : obj.id));
+                      }}
+                      className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/85 text-[#626262] shadow-sm backdrop-blur transition-colors hover:bg-white hover:text-[#1e1e1e]"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                    {infoOpen ? (
+                      <div
+                        data-tpl-info
+                        className="absolute right-1.5 top-8 z-20 w-[184px] rounded-lg border border-[#e6e6e6] bg-white p-2.5 text-[11px] leading-[1.45] text-[#444] shadow-lg"
+                      >
+                        {obj.description}
+                      </div>
+                    ) : null}
                   </div>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </section>
 
