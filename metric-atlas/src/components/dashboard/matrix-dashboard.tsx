@@ -756,7 +756,7 @@ export function MatrixDashboard() {
                     <button
                       type="button"
                       onClick={() => onTemplate(template)}
-                      className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-[#e6e6e6] bg-white text-left shadow-sm transition-[box-shadow,transform,border-color] duration-150 ease-out hover:translate-y-[-1px] hover:border-[#d9d9d9] hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] active:translate-y-0"
+                      className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-[#e6e6e6] bg-white text-left shadow-sm transition-[box-shadow,transform,border-color] duration-150 ease-out group-hover:translate-y-[-1px] group-hover:border-[#d9d9d9] group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] active:translate-y-0"
                     >
                       {src ? (
                         // eslint-disable-next-line @next/next/no-img-element
