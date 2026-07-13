@@ -4,6 +4,7 @@ import { CATEGORIES } from "./categories";
 import { DS_METRICS } from "./metrics";
 import { DS_TEMPLATES } from "./templates";
 import { OBJECTIVES } from "./objectives";
+import { AUDIENCES } from "./audiences";
 
 /** Contexto Design Systems: el primer (y por ahora único) pack de dominio. */
 export const designSystemsContext: MetricContext = {
@@ -14,6 +15,7 @@ export const designSystemsContext: MetricContext = {
   metrics: DS_METRICS,
   templates: DS_TEMPLATES,
   objectives: OBJECTIVES,
+  audiences: AUDIENCES,
   defaultAxes: { axisX: "esfuerzo", axisY: "impacto" },
 };
 
@@ -22,3 +24,4 @@ export { CATEGORIES, CATEGORY_BY_ID } from "./categories";
 export { DS_METRICS, DS_METRICS_BY_ID } from "./metrics";
 export { DS_TEMPLATES } from "./templates";
 export { OBJECTIVES } from "./objectives";
+export { AUDIENCES } from "./audiences";

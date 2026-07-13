@@ -44,6 +44,8 @@ export interface MatrixBoardCanvasSettings {
   excludedMetricIds: string[];
   /** Colores sólidos de los 4 cuadrantes (orden TL, TR, BL, BR). */
   quadrantColors: [string, string, string, string];
+  /** IDs de audiencias aplicadas a esta matriz (lista canónica del contexto). */
+  audiences: string[];
 }
 
 export interface MatrixSpace {
@@ -77,6 +79,7 @@ export function defaultBoardCanvas(): MatrixBoardCanvasSettings {
       string,
       string,
     ],
+    audiences: [],
   };
 }
 
@@ -132,6 +135,9 @@ export function sanitizeBoard(raw: Partial<MatrixBoard> & { id: string }): Matri
         ? canvasIn.excludedMetricIds.filter((s): s is string => typeof s === "string")
         : [],
       quadrantColors: sanitizeQuadrantColors(canvasIn.quadrantColors),
+      audiences: Array.isArray(canvasIn.audiences)
+        ? canvasIn.audiences.filter((s): s is string => typeof s === "string")
+        : [],
     },
   };
 }

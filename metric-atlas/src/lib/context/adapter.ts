@@ -9,7 +9,31 @@ import type {
   SourceType,
 } from "@/lib/types";
 import type { MatrixBoardCanvasSettings } from "@/lib/matrix-boards";
-import type { MatrixTemplateDef, MetricDefinition } from "./types";
+import type { MatrixTemplateDef, MetricContext, MetricDefinition } from "./types";
+import { getActiveContext } from "./registry";
+
+/**
+ * Mapea etiquetas de audiencia (p.ej. "DS Team", "Todas") a ids canónicos del
+ * contexto. "Todas" expande a todas las audiencias; las no reconocidas se ignoran.
+ */
+export function audienceIdsFromLabels(
+  labels: string[] | undefined,
+  ctx: MetricContext = getActiveContext(),
+): string[] {
+  if (!labels?.length) return [];
+  const byLabel = new Map(ctx.audiences.map((a) => [a.label.toLowerCase(), a.id]));
+  const ids = new Set<string>();
+  for (const label of labels) {
+    const key = label.trim().toLowerCase();
+    if (key === "todas" || key === "todos") {
+      ctx.audiences.forEach((a) => ids.add(a.id));
+      continue;
+    }
+    const id = byLabel.get(key);
+    if (id) ids.add(id);
+  }
+  return [...ids];
+}
 
 /**
  * Convierte una MetricDefinition (genérica del pack) en el `Metric` de runtime.
@@ -69,5 +93,6 @@ export function templateDefToCanvas(
     metricScores: def.placedScores,
     excludedMetricIds: allMetricIds.filter((id) => !included.has(id)),
     ...(def.quadrantColors ? { quadrantColors: def.quadrantColors } : {}),
+    audiences: audienceIdsFromLabels(def.audience),
   };
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Users } from "lucide-react";
 import type { Metric } from "@/lib/types";
 import { metricVizCategory, VIZ_LEGEND } from "@/lib/quadrant-viz";
 import { useMetricContext } from "@/lib/context/provider";
@@ -23,6 +24,8 @@ export function MetricsTray({
   variant = "card",
   objectiveId: controlledObjectiveId,
   onObjectiveChange,
+  audienceCount = 0,
+  onOpenAudiences,
 }: {
   metrics: Metric[];
   selectedId: string | null;
@@ -36,6 +39,10 @@ export function MetricsTray({
   /** Objetivo controlado por el padre (para también actualizar los ejes del canvas). */
   objectiveId?: string;
   onObjectiveChange?: (id: string) => void;
+  /** Nº de audiencias aplicadas (para el badge del botón). */
+  audienceCount?: number;
+  /** Abre la modal de audiencia (sobre el canvas). Si no se pasa, no se muestra el botón. */
+  onOpenAudiences?: () => void;
 }) {
   const [query, setQuery] = React.useState("");
   const [objectiveInternal, setObjectiveInternal] = React.useState<string>("");
@@ -120,19 +127,37 @@ export function MetricsTray({
         <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[#757575]">
           Objetivo
         </label>
-        <select
-          value={objectiveId}
-          onChange={(event) => setObjective(event.target.value)}
-          title={objective?.description ?? "Filtra las fichas usables por objetivo"}
-          className="w-full rounded-md border border-[#e6e6e6] bg-white px-2.5 py-2 text-xs text-[#1e1e1e] outline-none focus:border-[#0d99ff]"
-        >
-          <option value="">Todos los objetivos</option>
-          {context.objectives.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={objectiveId}
+            onChange={(event) => setObjective(event.target.value)}
+            title={objective?.description ?? "Filtra las fichas usables por objetivo"}
+            className="min-w-0 flex-1 rounded-md border border-[#e6e6e6] bg-white px-2.5 py-2 text-xs text-[#1e1e1e] outline-none focus:border-[#0d99ff]"
+          >
+            <option value="">Todos los objetivos</option>
+            {context.objectives.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          {onOpenAudiences ? (
+            <button
+              type="button"
+              onClick={onOpenAudiences}
+              title="Audiencia de la matriz"
+              aria-label="Audiencia de la matriz"
+              className="relative flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-md border border-[#e6e6e6] bg-white text-[#626262] transition-colors hover:border-[#d4d4d4] hover:text-[#1e1e1e]"
+            >
+              <Users className="h-4 w-4" />
+              {audienceCount > 0 ? (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0d99ff] px-1 text-[9px] font-semibold leading-none text-white">
+                  {audienceCount}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="mb-3 shrink-0">

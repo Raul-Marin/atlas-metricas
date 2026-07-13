@@ -133,5 +133,7 @@ export interface MetricContext {
   templates: MatrixTemplateDef[];
   /** Objetivos ("¿Qué quieres demostrar?") que filtran las fichas usables. */
   objectives: Objective[];
+  /** Audiencias canónicas (lista controlada para el selector de audiencia). */
+  audiences: DimensionValue[];
   defaultAxes: { axisX: string; axisY: string };
 }
