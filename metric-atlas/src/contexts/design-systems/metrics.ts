@@ -1,90 +1,97 @@
-import { metrics as LEGACY_METRICS } from "@/data/metrics";
-import type { Metric } from "@/lib/types";
 import type { MetricDefinition } from "@/lib/context/types";
+import { ADOPCION_METRICS } from "./metrics/adopcion";
+import { GOBERNANZA_METRICS } from "./metrics/gobernanza";
+import { CALIDAD_METRICS } from "./metrics/calidad";
+import { DELIVERY_METRICS } from "./metrics/delivery";
+import { CODIGO_METRICS } from "./metrics/codigo";
+import { DOCUMENTACION_METRICS } from "./metrics/documentacion";
+import { SATISFACCION_METRICS } from "./metrics/satisfaccion";
+import { IA_METRICS } from "./metrics/ia";
 
 export const CONTEXT_ID = "design-systems";
 
-/** Categoría (una de las 8) inferida de la métrica clásica. */
-function categoriaOf(m: Metric): string {
-  const sub = (m.subgroup ?? "").toLowerCase();
-  const t = m.tags.join(" ").toLowerCase();
-  const id = m.id.toLowerCase();
-  if (m.aiRelated || m.layer === "ai-automation" || m.layer === "experimental-anti-slop")
-    return "ia";
-  if (sub.includes("doc") || id.includes("documentation")) return "documentacion";
-  if (m.sourcePrimary === "code" || sub.includes("engineering")) return "codigo";
-  if (
-    sub.includes("governance") ||
-    sub.includes("hygiene") ||
-    sub.includes("support") ||
-    sub.includes("operations") ||
-    id.includes("deprecated") ||
-    id.includes("api-stability")
-  )
-    return "gobernanza";
-  if (m.sourcePrimary === "research" || sub.includes("experience") || t.includes("perceived"))
-    return "satisfaccion";
-  if (m.layer === "real-impact") return "delivery";
-  if (m.layer === "adoption-operations") return "adopcion";
-  return "calidad";
+/** Capa (dimensión clásica) inferida de la categoría, para vistas DS-específicas. */
+function layerForCategoria(cat: string): string {
+  switch (cat) {
+    case "adopcion":
+    case "documentacion":
+      return "adoption-operations";
+    case "delivery":
+    case "satisfaccion":
+      return "real-impact";
+    case "ia":
+      return "ai-automation";
+    default:
+      return "system-health"; // gobernanza, calidad, codigo
+  }
 }
 
-/** vizCategory (leyenda TIPOS) derivada de la métrica clásica. */
-function vizCategoriaOf(m: Metric): string {
-  const t = m.tags.join(" ").toLowerCase();
-  const id = m.id.toLowerCase();
-  if (m.sourcePrimary === "support" || t.includes("designops") || id.includes("ticket"))
-    return "support";
-  if (m.sourcePrimary === "product-analytics" || m.impactZone === "business" || t.includes("business"))
-    return "business";
-  if (m.sourcePrimary === "research" || t.includes("a11y") || t.includes("ux") || t.includes("user"))
-    return "end-user";
-  if (m.sourcePrimary === "code") return "code";
-  if (m.sourcePrimary === "figma" || t.includes("components") || t.includes("tokens") || t.includes("figma"))
-    return "components";
-  return "other";
+/** Zona de impacto inferida de la categoría. */
+function impactZoneForCategoria(cat: string): string {
+  switch (cat) {
+    case "adopcion":
+    case "documentacion":
+      return "operations";
+    case "calidad":
+    case "delivery":
+    case "satisfaccion":
+      return "product";
+    case "ia":
+      return "ai-automation";
+    default:
+      return "system"; // gobernanza, codigo
+  }
 }
 
-/** Deriva una MetricDefinition genérica desde una métrica clásica (Fase 1). */
-function toDefinition(m: Metric): MetricDefinition {
-  return {
-    id: m.id,
-    name: m.name,
-    shortName: m.shortName,
-    contextId: CONTEXT_ID,
-    attributes: {
-      categoria: categoriaOf(m),
-      measurementType: m.measurementType,
-      layer: m.layer,
-      sourcePrimary: m.sourcePrimary,
-      impactZone: m.impactZone,
-      maturity: m.maturity,
-      figmaAvailability: m.figmaAvailability,
-      signalQuality: m.signalQuality,
-      vizCategory: vizCategoriaOf(m),
-      experimental: m.experimental,
-      aiRelated: m.aiRelated,
-    },
-    ficha: {
-      description: m.description,
-      whyItMatters: m.whyItMatters,
-      howToMeasure: m.howToMeasure,
-      risksBiases: m.risksBiases,
-      automationIdeas: m.automationIdeas,
-    },
-    tags: m.tags,
-    relatedMetricIds: m.relatedMetricIds,
-    priority: m.priority,
-    archived: m.archived,
-  };
+/** Categoría visual (leyenda TIPOS) inferida de la fuente. */
+function vizForSource(source: string): string {
+  switch (source) {
+    case "figma":
+      return "components";
+    case "code":
+      return "code";
+    case "support":
+      return "support";
+    case "product-analytics":
+      return "business";
+    case "research":
+      return "end-user";
+    default:
+      return "other";
+  }
 }
 
 /**
- * Catálogo del contexto Design Systems.
- * Fase 1: derivado del catálogo clásico (24 métricas) para no romper nada.
- * Fase 2 (en curso): sustituir por las ~80 métricas reales de Figma (node 4:966).
+ * Rellena atributos derivados que las plantillas no piden pero las vistas
+ * DS-específicas (documentación, filtros, badges) necesitan: layer, impactZone,
+ * vizCategory, experimental, aiRelated.
  */
-export const DS_METRICS: MetricDefinition[] = LEGACY_METRICS.map(toDefinition);
+function normalize(m: MetricDefinition): MetricDefinition {
+  const a: Record<string, string | boolean> = { ...m.attributes };
+  const cat = typeof a.categoria === "string" ? a.categoria : "adopcion";
+  const source = typeof a.sourcePrimary === "string" ? a.sourcePrimary : "figma";
+  if (a.layer == null) a.layer = layerForCategoria(cat);
+  if (a.impactZone == null) a.impactZone = impactZoneForCategoria(cat);
+  if (a.vizCategory == null) a.vizCategory = vizForSource(source);
+  if (a.experimental == null) a.experimental = a.maturity === "experimental";
+  if (a.aiRelated == null) a.aiRelated = cat === "ia";
+  return { ...m, contextId: CONTEXT_ID, attributes: a };
+}
+
+/**
+ * Catálogo real del contexto Design Systems: las ~80 métricas de Figma
+ * (node 4:966), agrupadas en 8 categorías.
+ */
+export const DS_METRICS: MetricDefinition[] = [
+  ...ADOPCION_METRICS,
+  ...GOBERNANZA_METRICS,
+  ...CALIDAD_METRICS,
+  ...DELIVERY_METRICS,
+  ...CODIGO_METRICS,
+  ...DOCUMENTACION_METRICS,
+  ...SATISFACCION_METRICS,
+  ...IA_METRICS,
+].map(normalize);
 
 export const DS_METRICS_BY_ID: Record<string, MetricDefinition> = Object.fromEntries(
   DS_METRICS.map((m) => [m.id, m]),
