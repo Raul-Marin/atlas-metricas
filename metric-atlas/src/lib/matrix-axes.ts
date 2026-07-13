@@ -1,60 +1,8 @@
-import type {
-  FigmaAvailability,
-  ImpactZone,
-  MatrixAxisId,
-  MatrixAxesState,
-  MeasurementType,
-  Metric,
-  MetricLayer,
-  Maturity,
-  SignalQuality,
-} from "./types";
-import { SOURCE_TYPES } from "./constants";
-import { metricVizCategory, type VizCategory, VIZ_LEGEND } from "./quadrant-viz";
+import type { MatrixAxisId, MatrixAxesState, Metric } from "./types";
+import { dimensionById, getActiveContext } from "./context/registry";
 
-/** Por defecto, una matriz nueva es un 2×2 de decisión: esfuerzo (X) × impacto (Y). */
-export const defaultMatrixAxes: MatrixAxesState = {
-  axisX: "esfuerzo",
-  axisY: "impacto",
-};
-
-/** Orden eje X: de izquierda a derecha */
-const MEASUREMENT_AXIS_ORDER: MeasurementType[] = [
-  "qualitative",
-  "hybrid",
-  "experimental",
-  "quantitative",
-];
-
-/** Orden eje Y: de arriba a abajo (arriba = adopción / impacto operativo) */
-const LAYER_AXIS_ORDER: MetricLayer[] = [
-  "adoption-operations",
-  "real-impact",
-  "ai-automation",
-  "system-health",
-  "experimental-anti-slop",
-];
-
-const IMPACT_AXIS_ORDER: ImpactZone[] = [
-  "system",
-  "operations",
-  "product",
-  "business",
-  "ai-automation",
-];
-
-const FIGMA_AXIS_ORDER: FigmaAvailability[] = ["no", "partial", "yes"];
-
-const MATURITY_AXIS_ORDER: Maturity[] = ["classical", "advanced", "experimental"];
-
-const SIGNAL_AXIS_ORDER: SignalQuality[] = [
-  "speculative",
-  "weak",
-  "medium",
-  "strong",
-];
-
-const VIZ_AXIS_ORDER: VizCategory[] = VIZ_LEGEND.map((v) => v.key);
+/** Por defecto, una matriz nueva usa los ejes por defecto del contexto activo. */
+export const defaultMatrixAxes: MatrixAxesState = getActiveContext().defaultAxes;
 
 function hashJitter(id: string, salt: string): number {
   const s = id + salt;
@@ -63,9 +11,9 @@ function hashJitter(id: string, salt: string): number {
   return (Math.abs(h) % 1000) / 1000;
 }
 
-function positionInOrder<T extends string>(
-  value: T,
-  order: readonly T[],
+function positionInOrder(
+  value: string,
+  order: readonly string[],
   id: string,
   salt: "x" | "y",
 ): number {
@@ -84,35 +32,23 @@ function boolPos(v: boolean, id: string, salt: "x" | "y"): number {
   return Math.min(0.9, Math.max(0.1, base + jitter));
 }
 
+/**
+ * Posición 0–1 de una métrica en una dimensión (eje). Genérico sobre el contexto:
+ * - dimensión "judgment": sin valor de catálogo → centro (0.5); se coloca arrastrando.
+ * - dimensión categorical/ordinal: se lee `metric.attributes[dim.id]` y se proyecta
+ *   según el orden de `dim.values` (o boolPos si el atributo es booleano).
+ */
 export function axisScalar(
   m: Metric,
   axis: MatrixAxisId,
   salt: "x" | "y",
 ): number {
-  switch (axis) {
-    case "measurementType":
-      return positionInOrder(m.measurementType, MEASUREMENT_AXIS_ORDER, m.id, salt);
-    case "layer":
-      return positionInOrder(m.layer, LAYER_AXIS_ORDER, m.id, salt);
-    case "sourcePrimary":
-      return positionInOrder(m.sourcePrimary, SOURCE_TYPES, m.id, salt);
-    case "impactZone":
-      return positionInOrder(m.impactZone, IMPACT_AXIS_ORDER, m.id, salt);
-    case "maturity":
-      return positionInOrder(m.maturity, MATURITY_AXIS_ORDER, m.id, salt);
-    case "figmaAvailability":
-      return positionInOrder(m.figmaAvailability, FIGMA_AXIS_ORDER, m.id, salt);
-    case "signalQuality":
-      return positionInOrder(m.signalQuality, SIGNAL_AXIS_ORDER, m.id, salt);
-    case "vizCategory":
-      return positionInOrder(metricVizCategory(m), VIZ_AXIS_ORDER, m.id, salt);
-    case "experimental":
-      return boolPos(m.experimental, m.id, salt);
-    case "aiRelated":
-      return boolPos(m.aiRelated, m.id, salt);
-    default:
-      return 0.5;
-  }
+  const dim = dimensionById(axis);
+  if (!dim || dim.kind === "judgment") return 0.5;
+  const raw = m.attributes?.[dim.id];
+  if (typeof raw === "boolean") return boolPos(raw, m.id, salt);
+  const order = (dim.values ?? []).map((v) => v.id);
+  return positionInOrder(raw != null ? String(raw) : "", order, m.id, salt);
 }
 
 export function metricMapPosition(
@@ -125,98 +61,30 @@ export function metricMapPosition(
   };
 }
 
-/** Metadatos para UI: etiqueta del eje y textos en los extremos */
+/** Metadatos para UI: etiqueta del eje y textos en los extremos (del contexto activo). */
 export const MATRIX_AXIS_OPTIONS: {
   id: MatrixAxisId;
   label: string;
   endLow: string;
   endHigh: string;
-}[] = [
-  {
-    id: "impacto",
-    label: "Impacto",
-    endLow: "Alto impacto",
-    endHigh: "Bajo impacto",
-  },
-  {
-    id: "esfuerzo",
-    label: "Esfuerzo",
-    endLow: "Mucho esfuerzo",
-    endHigh: "Poco esfuerzo",
-  },
-  {
-    id: "measurementType",
-    label: "Tipo de medición",
-    endLow: "Cualitativo",
-    endHigh: "Cuantitativo",
-  },
-  {
-    id: "layer",
-    label: "Capa",
-    endLow: "Adopción / ops",
-    endHigh: "Sistema / anti-slop",
-  },
-  {
-    id: "sourcePrimary",
-    label: "Fuente principal",
-    endLow: "Primera (orden lista)",
-    endHigh: "Última",
-  },
-  {
-    id: "impactZone",
-    label: "Zona de impacto",
-    endLow: "Sistema",
-    endHigh: "IA / auto",
-  },
-  {
-    id: "maturity",
-    label: "Madurez",
-    endLow: "Clásica",
-    endHigh: "Experimental",
-  },
-  {
-    id: "figmaAvailability",
-    label: "Figma",
-    endLow: "No",
-    endHigh: "Sí",
-  },
-  {
-    id: "signalQuality",
-    label: "Calidad de señal",
-    endLow: "Especulativa",
-    endHigh: "Fuerte",
-  },
-  {
-    id: "vizCategory",
-    label: "Categoría visual",
-    endLow: "Components",
-    endHigh: "Other",
-  },
-  {
-    id: "experimental",
-    label: "Experimental",
-    endLow: "No",
-    endHigh: "Sí",
-  },
-  {
-    id: "aiRelated",
-    label: "IA-related",
-    endLow: "No",
-    endHigh: "Sí",
-  },
-];
+}[] = getActiveContext().dimensions.map((d) => ({
+  id: d.id,
+  label: d.label,
+  endLow: d.endLow ?? "Bajo",
+  endHigh: d.endHigh ?? "Alto",
+}));
 
 export function axisEndLabels(axis: MatrixAxisId): { low: string; high: string } {
-  const meta = MATRIX_AXIS_OPTIONS.find((o) => o.id === axis);
-  return meta
-    ? { low: meta.endLow, high: meta.endHigh }
+  const dim = dimensionById(axis);
+  return dim
+    ? { low: dim.endLow ?? "Bajo", high: dim.endHigh ?? "Alto" }
     : { low: "Bajo", high: "Alto" };
 }
 
 /** Ajusta ejes si X e Y son iguales */
 export function normalizeAxes(axes: MatrixAxesState): MatrixAxesState {
   if (axes.axisX !== axes.axisY) return axes;
-  const fallbackY: MatrixAxisId =
-    axes.axisX === "impacto" ? "esfuerzo" : "impacto";
+  const def = getActiveContext().defaultAxes;
+  const fallbackY = axes.axisX === def.axisY ? def.axisX : def.axisY;
   return { ...axes, axisY: fallbackY };
 }
