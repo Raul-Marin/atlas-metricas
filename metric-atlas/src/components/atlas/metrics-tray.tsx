@@ -21,6 +21,8 @@ export function MetricsTray({
   onMetricPointerDown,
   cardColorByCategory = false,
   variant = "card",
+  objectiveId: controlledObjectiveId,
+  onObjectiveChange,
 }: {
   metrics: Metric[];
   selectedId: string | null;
@@ -31,9 +33,15 @@ export function MetricsTray({
   /** Refleja el color de fichas del canvas en la preview (para que coincida). */
   cardColorByCategory?: boolean;
   variant?: "card" | "flat";
+  /** Objetivo controlado por el padre (para también actualizar los ejes del canvas). */
+  objectiveId?: string;
+  onObjectiveChange?: (id: string) => void;
 }) {
   const [query, setQuery] = React.useState("");
-  const [objectiveId, setObjectiveId] = React.useState<string>("");
+  const [objectiveInternal, setObjectiveInternal] = React.useState<string>("");
+  const objectiveId = controlledObjectiveId ?? objectiveInternal;
+  const setObjective = (id: string) =>
+    onObjectiveChange ? onObjectiveChange(id) : setObjectiveInternal(id);
   const context = useMetricContext();
   const objective =
     context.objectives.find((o) => o.id === objectiveId) ?? null;
@@ -114,7 +122,7 @@ export function MetricsTray({
         </label>
         <select
           value={objectiveId}
-          onChange={(event) => setObjectiveId(event.target.value)}
+          onChange={(event) => setObjective(event.target.value)}
           title={objective?.description ?? "Filtra las fichas usables por objetivo"}
           className="w-full rounded-md border border-[#e6e6e6] bg-white px-2.5 py-2 text-xs text-[#1e1e1e] outline-none focus:border-[#0d99ff]"
         >

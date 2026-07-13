@@ -29,6 +29,7 @@ import type { Metric } from "@/lib/types";
 import { filterMetrics } from "@/lib/filters";
 import { resolveMetricLayout } from "@/lib/metric-layout";
 import { MATRIX_AXIS_OPTIONS } from "@/lib/matrix-axes";
+import { useMetricContext } from "@/lib/context/provider";
 import { useAtlasFilters } from "@/context/atlas-filters-context";
 import { FiltersBar } from "@/components/layout/filters-bar";
 import { FigJamBoard, type FigJamBoardHandle } from "./figjam-board";
@@ -60,6 +61,7 @@ export function AtlasWorkspace({
     filters,
     colorCardsByCategory,
     matrixAxes,
+    setMatrixAxes,
     metricScores,
     excludedMetricIds,
     excludeMetrics,
@@ -71,6 +73,22 @@ export function AtlasWorkspace({
     canRedo,
   } = useAtlasFilters();
   const { user } = useAuth();
+  const metricContext = useMetricContext();
+  const [objectiveId, setObjectiveId] = React.useState<string>("");
+
+  // Al elegir un objetivo: filtra la biblioteca y actualiza los ejes del canvas
+  // a los de la matriz que ese objetivo propone.
+  const handleObjectiveChange = React.useCallback(
+    (id: string) => {
+      setObjectiveId(id);
+      const obj = metricContext.objectives.find((o) => o.id === id);
+      const tpl = obj?.matrixTemplateId
+        ? metricContext.templates.find((t) => t.id === obj.matrixTemplateId)
+        : null;
+      if (tpl) setMatrixAxes({ axisX: tpl.axisX, axisY: tpl.axisY });
+    },
+    [metricContext, setMatrixAxes],
+  );
   const visible = React.useMemo(
     () => filterMetrics(metrics, filters),
     [metrics, filters],
@@ -606,6 +624,8 @@ export function AtlasWorkspace({
                 onSelect={handleTraySelect}
                 onMetricPointerDown={handleMetricPointerDown}
                 cardColorByCategory={colorCardsByCategory}
+                objectiveId={objectiveId}
+                onObjectiveChange={handleObjectiveChange}
                 variant="flat"
               />
             ) : (
@@ -648,6 +668,8 @@ export function AtlasWorkspace({
                     handleTraySelect(m);
                     setFiltersOpen(false);
                   }}
+                  objectiveId={objectiveId}
+                  onObjectiveChange={handleObjectiveChange}
                   variant="flat"
                 />
               ) : (
