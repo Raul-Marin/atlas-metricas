@@ -35,6 +35,12 @@ type AtlasFiltersContextValue = {
   audiences: string[];
   setAudiences: (ids: string[]) => void;
   toggleAudience: (id: string) => void;
+  /** Objetivo seleccionado ("" si ninguno). Persistido en el board. */
+  objective: string;
+  setObjective: (id: string) => void;
+  /** Plantilla de origen (para el significado de cuadrantes en el export). */
+  templateId: string;
+  setTemplateId: (id: string) => void;
   mapClusterMode: boolean;
   setMapClusterMode: React.Dispatch<React.SetStateAction<boolean>>;
   /** Valoraciones por métrica y dimensión (0–1). La posición sale de aquí. */
@@ -83,6 +89,8 @@ function buildInitialState(initialCanvas?: MatrixBoardCanvasSettings | null) {
     metricScores: c.metricScores ?? {},
     excludedMetricIds: c.excludedMetricIds ?? [],
     audiences: c.audiences ?? [],
+    objective: c.objective ?? "",
+    templateId: c.templateId ?? "",
   };
 }
 
@@ -108,6 +116,8 @@ export function AtlasFiltersProvider({
   );
   const [mapClusterMode, setMapClusterMode] = React.useState(init.mapClusterMode);
   const [audiences, setAudiences] = React.useState<string[]>(init.audiences);
+  const [objective, setObjective] = React.useState<string>(init.objective);
+  const [templateId, setTemplateId] = React.useState<string>(init.templateId);
 
   const toggleAudience = React.useCallback((id: string) => {
     setAudiences((prev) =>
@@ -303,6 +313,10 @@ export function AtlasFiltersProvider({
       audiences,
       setAudiences,
       toggleAudience,
+      objective,
+      setObjective,
+      templateId,
+      setTemplateId,
       mapClusterMode,
       setMapClusterMode,
       metricScores,
@@ -340,6 +354,8 @@ export function AtlasFiltersProvider({
       resetQuadrantColors,
       audiences,
       toggleAudience,
+      objective,
+      templateId,
       clearMetricScores,
       excludedMetricIds,
       excludeMetric,

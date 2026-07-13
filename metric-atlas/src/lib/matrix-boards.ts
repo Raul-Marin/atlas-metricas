@@ -45,6 +45,10 @@ export interface MatrixBoardCanvasSettings {
   quadrantColors: [string, string, string, string];
   /** IDs de audiencias aplicadas a esta matriz (lista canónica del contexto). */
   audiences: string[];
+  /** Objetivo seleccionado ("¿Qué quieres demostrar?"); "" si ninguno. */
+  objective: string;
+  /** Plantilla de origen (para el significado de los cuadrantes en el export); "" si ninguna. */
+  templateId: string;
 }
 
 export interface MatrixSpace {
@@ -79,6 +83,8 @@ export function defaultBoardCanvas(): MatrixBoardCanvasSettings {
       string,
     ],
     audiences: [],
+    objective: "",
+    templateId: "",
   };
 }
 
@@ -136,6 +142,8 @@ export function sanitizeBoard(raw: Partial<MatrixBoard> & { id: string }): Matri
       audiences: Array.isArray(canvasIn.audiences)
         ? canvasIn.audiences.filter((s): s is string => typeof s === "string")
         : [],
+      objective: typeof canvasIn.objective === "string" ? canvasIn.objective : "",
+      templateId: typeof canvasIn.templateId === "string" ? canvasIn.templateId : "",
     },
   };
 }

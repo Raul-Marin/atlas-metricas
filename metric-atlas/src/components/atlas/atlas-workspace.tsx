@@ -14,6 +14,7 @@ import {
   Loader2,
   Redo2,
   Share2,
+  Sparkles,
   Table2,
   Undo2,
   X,
@@ -31,6 +32,7 @@ import { resolveMetricLayout } from "@/lib/metric-layout";
 import { MATRIX_AXIS_OPTIONS } from "@/lib/matrix-axes";
 import { useMetricContext } from "@/lib/context/provider";
 import { audienceIdsFromLabels } from "@/lib/context/adapter";
+import { buildAiBundle } from "@/lib/export/ai-bundle";
 import { AudienceModal } from "./audience-modal";
 import { useAtlasFilters } from "@/context/atlas-filters-context";
 import { FiltersBar } from "@/components/layout/filters-bar";
@@ -72,6 +74,10 @@ export function AtlasWorkspace({
     audiences,
     setAudiences,
     toggleAudience,
+    objective,
+    setObjective,
+    templateId,
+    setTemplateId,
     undo,
     redo,
     canUndo,
@@ -79,14 +85,14 @@ export function AtlasWorkspace({
   } = useAtlasFilters();
   const { user } = useAuth();
   const metricContext = useMetricContext();
-  const [objectiveId, setObjectiveId] = React.useState<string>("");
   const [audienceModalOpen, setAudienceModalOpen] = React.useState(false);
 
   // Al elegir un objetivo: filtra la biblioteca, actualiza los ejes del canvas a
-  // los de la matriz que ese objetivo propone y pre-rellena su audiencia (editable).
+  // los de la matriz que ese objetivo propone, pre-rellena su audiencia (editable)
+  // y guarda la plantilla de origen (para el significado de cuadrantes en el export).
   const handleObjectiveChange = React.useCallback(
     (id: string) => {
-      setObjectiveId(id);
+      setObjective(id);
       const obj = metricContext.objectives.find((o) => o.id === id);
       const tpl = obj?.matrixTemplateId
         ? metricContext.templates.find((t) => t.id === obj.matrixTemplateId)
@@ -94,9 +100,10 @@ export function AtlasWorkspace({
       if (tpl) {
         setMatrixAxes({ axisX: tpl.axisX, axisY: tpl.axisY });
         setAudiences(audienceIdsFromLabels(tpl.audience, metricContext));
+        setTemplateId(tpl.id);
       }
     },
-    [metricContext, setMatrixAxes, setAudiences],
+    [metricContext, setMatrixAxes, setAudiences, setObjective, setTemplateId],
   );
   const visible = React.useMemo(
     () => filterMetrics(metrics, filters),
@@ -127,6 +134,7 @@ export function AtlasWorkspace({
   const [shareState, setShareState] = React.useState<ShareState | null>(null);
   const [title, setTitle] = React.useState(initialTitle ?? "Metric Atlas");
   const [exportOpen, setExportOpen] = React.useState(false);
+  const [aiCopied, setAiCopied] = React.useState(false);
   const [exporting, setExporting] = React.useState<null | "png" | "pdf">(null);
   const [dataTableOpen, setDataTableOpen] = React.useState(false);
   const figjamRef = React.useRef<FigJamBoardHandle | null>(null);
@@ -201,6 +209,49 @@ export function AtlasWorkspace({
     a.click();
     URL.revokeObjectURL(url);
   }, [canvasMetrics, matrixAxes, metricScores, title]);
+
+  // Copia el paquete semántico (matriz + objetivo + audiencia + cuadrantes +
+  // fichas) en Markdown, para pegarlo a un agente IA que lo analice.
+  const handleExportAi = React.useCallback(async () => {
+    const md = buildAiBundle({
+      title,
+      axes: matrixAxes,
+      metrics: canvasMetrics,
+      scores: metricScores,
+      objective,
+      audiences,
+      templateId,
+      context: metricContext,
+    });
+    try {
+      await navigator.clipboard.writeText(md);
+      setAiCopied(true);
+      window.setTimeout(() => {
+        setAiCopied(false);
+        setExportOpen(false);
+      }, 1500);
+    } catch {
+      // Fallback: descarga el .md si el portapapeles no está disponible.
+      const safe = title.replace(/[^\p{L}\p{N}\-_ ]/gu, "").trim() || "matrix";
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safe}-ia.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportOpen(false);
+    }
+  }, [
+    title,
+    matrixAxes,
+    canvasMetrics,
+    metricScores,
+    objective,
+    audiences,
+    templateId,
+    metricContext,
+  ]);
 
   React.useEffect(() => {
     if (!boardId) return;
@@ -583,6 +634,15 @@ export function AtlasWorkspace({
                     <FileSpreadsheet className="h-3.5 w-3.5 text-[#757575]" />
                     Tabla CSV
                   </button>
+                  <div className="my-1 border-t border-[#f0f0f0]" />
+                  <button
+                    type="button"
+                    onClick={handleExportAi}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#1e1e1e] transition-colors hover:bg-[#f7f7f7]"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+                    {aiCopied ? "¡Copiado!" : "Exportar para IA (copiar)"}
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -633,7 +693,7 @@ export function AtlasWorkspace({
                 onSelect={handleTraySelect}
                 onMetricPointerDown={handleMetricPointerDown}
                 cardColorByCategory={colorCardsByCategory}
-                objectiveId={objectiveId}
+                objectiveId={objective}
                 onObjectiveChange={handleObjectiveChange}
                 audienceCount={audiences.length}
                 onOpenAudiences={() => setAudienceModalOpen(true)}
@@ -679,7 +739,7 @@ export function AtlasWorkspace({
                     handleTraySelect(m);
                     setFiltersOpen(false);
                   }}
-                  objectiveId={objectiveId}
+                  objectiveId={objective}
                   onObjectiveChange={handleObjectiveChange}
                   audienceCount={audiences.length}
                   onOpenAudiences={() => setAudienceModalOpen(true)}

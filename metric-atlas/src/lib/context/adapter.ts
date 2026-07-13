@@ -94,5 +94,6 @@ export function templateDefToCanvas(
     excludedMetricIds: allMetricIds.filter((id) => !included.has(id)),
     ...(def.quadrantColors ? { quadrantColors: def.quadrantColors } : {}),
     audiences: audienceIdsFromLabels(def.audience),
+    templateId: def.id,
   };
 }
