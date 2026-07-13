@@ -16,7 +16,7 @@ import {
   defaultBoardCanvas,
   defaultBoardCover,
   sanitizeBoard,
-  type BoardCoverId,
+  type BoardCover,
   type MatrixBoard,
   type MatrixBoardCanvasSettings,
   type MatrixSpace,
@@ -102,6 +102,7 @@ export async function createBoard(
   uid: string,
   name: string,
   canvasOverrides?: Partial<MatrixBoardCanvasSettings>,
+  cover?: BoardCover,
 ): Promise<MatrixBoard> {
   const id = newId();
   const now = nowIso();
@@ -110,7 +111,7 @@ export async function createBoard(
     name: name.trim() || "Matrix sin título",
     spaceId: null,
     starred: false,
-    coverId: defaultBoardCover(),
+    cover: cover ?? defaultBoardCover(),
     createdAt: now,
     updatedAt: now,
     canvas: {
@@ -179,10 +180,10 @@ export async function toggleStarBoard(
 export async function updateBoardCover(
   uid: string,
   id: string,
-  coverId: BoardCoverId,
+  cover: BoardCover,
 ): Promise<void> {
   await updateDoc(doc(boardsCol(uid), id), {
-    coverId,
+    cover,
     updatedAt: nowIso(),
   });
 }

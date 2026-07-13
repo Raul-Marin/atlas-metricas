@@ -31,6 +31,10 @@ type AtlasFiltersContextValue = {
   quadrantColors: QuadrantColors;
   setQuadrantColor: (index: number, color: string) => void;
   resetQuadrantColors: () => void;
+  /** Audiencias aplicadas al board (ids de la lista canónica del contexto). */
+  audiences: string[];
+  setAudiences: (ids: string[]) => void;
+  toggleAudience: (id: string) => void;
   mapClusterMode: boolean;
   setMapClusterMode: React.Dispatch<React.SetStateAction<boolean>>;
   /** Valoraciones por métrica y dimensión (0–1). La posición sale de aquí. */
@@ -78,6 +82,7 @@ function buildInitialState(initialCanvas?: MatrixBoardCanvasSettings | null) {
     mapClusterMode: c.mapClusterMode,
     metricScores: c.metricScores ?? {},
     excludedMetricIds: c.excludedMetricIds ?? [],
+    audiences: c.audiences ?? [],
   };
 }
 
@@ -102,6 +107,13 @@ export function AtlasFiltersProvider({
     init.quadrantColors,
   );
   const [mapClusterMode, setMapClusterMode] = React.useState(init.mapClusterMode);
+  const [audiences, setAudiences] = React.useState<string[]>(init.audiences);
+
+  const toggleAudience = React.useCallback((id: string) => {
+    setAudiences((prev) =>
+      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id],
+    );
+  }, []);
 
   // ── Estado del canvas con historial (undo/redo) ──
   const [present, setPresent] = React.useState<CanvasUndoState>({
@@ -288,6 +300,9 @@ export function AtlasFiltersProvider({
       quadrantColors,
       setQuadrantColor,
       resetQuadrantColors,
+      audiences,
+      setAudiences,
+      toggleAudience,
       mapClusterMode,
       setMapClusterMode,
       metricScores,
@@ -323,6 +338,8 @@ export function AtlasFiltersProvider({
       quadrantColors,
       setQuadrantColor,
       resetQuadrantColors,
+      audiences,
+      toggleAudience,
       clearMetricScores,
       excludedMetricIds,
       excludeMetric,

@@ -41,6 +41,8 @@ function build(spec: TemplateSpec): MatrixTemplateDef {
     placedScores,
     includedMetricIds,
     accentColor: spec.accentColor,
+    // Los ids de portada coinciden con los ids de plantilla.
+    cover: spec.id,
   };
 }
 

@@ -2,13 +2,12 @@ import type { AtlasFilters, MatrixAxesState, MetricScoresMap } from "./types";
 import { defaultAtlasFilters } from "./filters";
 import { defaultMatrixAxes, normalizeAxes } from "./matrix-axes";
 
-export const BOARD_COVER_IDS = [
-  "summary",
-  "signals",
-  "catalog",
-  "quality",
-] as const;
-export type BoardCoverId = (typeof BOARD_COVER_IDS)[number];
+/**
+ * Portada del board: `"canvas"` (mini-preview del lienzo en vivo) o el id de una
+ * imagen de portada del contexto (ver `contexts/design-systems/covers.ts`).
+ */
+export const CANVAS_COVER = "canvas";
+export type BoardCover = string;
 
 /**
  * Colores sólidos por cuadrante (orden TL, TR, BL, BR). Mismos tonos que los
@@ -44,6 +43,8 @@ export interface MatrixBoardCanvasSettings {
   excludedMetricIds: string[];
   /** Colores sólidos de los 4 cuadrantes (orden TL, TR, BL, BR). */
   quadrantColors: [string, string, string, string];
+  /** IDs de audiencias aplicadas a esta matriz (lista canónica del contexto). */
+  audiences: string[];
 }
 
 export interface MatrixSpace {
@@ -56,7 +57,7 @@ export interface MatrixBoard {
   name: string;
   spaceId: string | null;
   starred: boolean;
-  coverId: BoardCoverId;
+  cover: BoardCover;
   createdAt: string;
   updatedAt: string;
   canvas: MatrixBoardCanvasSettings;
@@ -77,11 +78,12 @@ export function defaultBoardCanvas(): MatrixBoardCanvasSettings {
       string,
       string,
     ],
+    audiences: [],
   };
 }
 
-export function defaultBoardCover(): BoardCoverId {
-  return "summary";
+export function defaultBoardCover(): BoardCover {
+  return CANVAS_COVER;
 }
 
 /** Normaliza el mapa de valoraciones: solo entradas con valores numéricos válidos. */
@@ -109,10 +111,9 @@ export function sanitizeBoard(raw: Partial<MatrixBoard> & { id: string }): Matri
     name: raw.name ?? "Sin título",
     spaceId: raw.spaceId ?? null,
     starred: Boolean(raw.starred),
-    coverId:
-      typeof raw.coverId === "string" &&
-      BOARD_COVER_IDS.includes(raw.coverId as BoardCoverId)
-        ? (raw.coverId as BoardCoverId)
+    cover:
+      typeof raw.cover === "string" && raw.cover
+        ? raw.cover
         : defaultBoardCover(),
     createdAt: raw.createdAt ?? new Date().toISOString(),
     updatedAt: raw.updatedAt ?? new Date().toISOString(),
@@ -132,6 +133,9 @@ export function sanitizeBoard(raw: Partial<MatrixBoard> & { id: string }): Matri
         ? canvasIn.excludedMetricIds.filter((s): s is string => typeof s === "string")
         : [],
       quadrantColors: sanitizeQuadrantColors(canvasIn.quadrantColors),
+      audiences: Array.isArray(canvasIn.audiences)
+        ? canvasIn.audiences.filter((s): s is string => typeof s === "string")
+        : [],
     },
   };
 }

@@ -30,6 +30,8 @@ import { filterMetrics } from "@/lib/filters";
 import { resolveMetricLayout } from "@/lib/metric-layout";
 import { MATRIX_AXIS_OPTIONS } from "@/lib/matrix-axes";
 import { useMetricContext } from "@/lib/context/provider";
+import { audienceIdsFromLabels } from "@/lib/context/adapter";
+import { AudienceModal } from "./audience-modal";
 import { useAtlasFilters } from "@/context/atlas-filters-context";
 import { FiltersBar } from "@/components/layout/filters-bar";
 import { FigJamBoard, type FigJamBoardHandle } from "./figjam-board";
@@ -67,6 +69,9 @@ export function AtlasWorkspace({
     excludeMetrics,
     includeMetric,
     includeMetricAt,
+    audiences,
+    setAudiences,
+    toggleAudience,
     undo,
     redo,
     canUndo,
@@ -75,9 +80,10 @@ export function AtlasWorkspace({
   const { user } = useAuth();
   const metricContext = useMetricContext();
   const [objectiveId, setObjectiveId] = React.useState<string>("");
+  const [audienceModalOpen, setAudienceModalOpen] = React.useState(false);
 
-  // Al elegir un objetivo: filtra la biblioteca y actualiza los ejes del canvas
-  // a los de la matriz que ese objetivo propone.
+  // Al elegir un objetivo: filtra la biblioteca, actualiza los ejes del canvas a
+  // los de la matriz que ese objetivo propone y pre-rellena su audiencia (editable).
   const handleObjectiveChange = React.useCallback(
     (id: string) => {
       setObjectiveId(id);
@@ -85,9 +91,12 @@ export function AtlasWorkspace({
       const tpl = obj?.matrixTemplateId
         ? metricContext.templates.find((t) => t.id === obj.matrixTemplateId)
         : null;
-      if (tpl) setMatrixAxes({ axisX: tpl.axisX, axisY: tpl.axisY });
+      if (tpl) {
+        setMatrixAxes({ axisX: tpl.axisX, axisY: tpl.axisY });
+        setAudiences(audienceIdsFromLabels(tpl.audience, metricContext));
+      }
     },
-    [metricContext, setMatrixAxes],
+    [metricContext, setMatrixAxes, setAudiences],
   );
   const visible = React.useMemo(
     () => filterMetrics(metrics, filters),
@@ -626,6 +635,8 @@ export function AtlasWorkspace({
                 cardColorByCategory={colorCardsByCategory}
                 objectiveId={objectiveId}
                 onObjectiveChange={handleObjectiveChange}
+                audienceCount={audiences.length}
+                onOpenAudiences={() => setAudienceModalOpen(true)}
                 variant="flat"
               />
             ) : (
@@ -670,6 +681,8 @@ export function AtlasWorkspace({
                   }}
                   objectiveId={objectiveId}
                   onObjectiveChange={handleObjectiveChange}
+                  audienceCount={audiences.length}
+                  onOpenAudiences={() => setAudienceModalOpen(true)}
                   variant="flat"
                 />
               ) : (
@@ -713,6 +726,14 @@ export function AtlasWorkspace({
           className={cn(!primary && "max-md:hidden")}
         />
       </div>
+
+      <AudienceModal
+        open={audienceModalOpen}
+        onClose={() => setAudienceModalOpen(false)}
+        audiences={metricContext.audiences}
+        applied={audiences}
+        onToggle={toggleAudience}
+      />
 
       {docsOpen ? (
         <div

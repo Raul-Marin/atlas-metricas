@@ -19,6 +19,7 @@ export function BoardPersistence({ boardId }: { boardId: string }) {
     mapClusterMode,
     metricScores,
     excludedMetricIds,
+    audiences,
   } = useAtlasFilters();
 
   const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -36,6 +37,7 @@ export function BoardPersistence({ boardId }: { boardId: string }) {
         filters,
         metricScores,
         excludedMetricIds,
+        audiences,
       }).catch((err) => {
         console.error("[board-persistence] updateBoardCanvas", err);
       });
@@ -54,6 +56,7 @@ export function BoardPersistence({ boardId }: { boardId: string }) {
     showMatrixQuadrantColors,
     quadrantColors,
     excludedMetricIds,
+    audiences,
   ]);
 
   return null;

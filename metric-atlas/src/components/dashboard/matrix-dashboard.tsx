@@ -13,6 +13,8 @@ import {
   Folder,
   FolderInput,
   Home,
+  Image as ImageIcon,
+  Info,
   LayoutGrid,
   List,
   LogOut,
@@ -20,7 +22,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Sparkles,
   Star,
   Trash2,
   X,
@@ -42,6 +43,7 @@ import { MetricDetail } from "@/components/metric/metric-detail";
 import { useMetrics } from "@/lib/metrics/provider";
 import { useMetricContext } from "@/lib/context/provider";
 import { templateDefToCanvas } from "@/lib/context/adapter";
+import { USER_CREATED_COVER } from "@/contexts/design-systems";
 import type { MatrixTemplateDef } from "@/lib/context/types";
 import type { Metric } from "@/lib/types";
 import {
@@ -53,10 +55,12 @@ import {
   renameSpace,
   setBoardSpace,
   toggleStarBoard,
+  updateBoardCover,
 } from "@/lib/boards/firestore";
 import { useBoards } from "@/lib/boards/use-boards";
 import { useAuth } from "@/lib/auth/auth-provider";
-import { BoardThumbnailPreview } from "./board-thumbnail-preview";
+import { BoardCover } from "./board-cover";
+import { CoverPickerModal } from "./cover-picker-modal";
 
 type SortMode = "recent" | "name" | "starred";
 
@@ -167,6 +171,22 @@ export function MatrixDashboard() {
   const spaceNameInputRef = React.useRef<HTMLInputElement>(null);
   const [menuId, setMenuId] = React.useState<string | null>(null);
   const [moveBoardId, setMoveBoardId] = React.useState<string | null>(null);
+  const [coverBoardId, setCoverBoardId] = React.useState<string | null>(null);
+  const [infoTplId, setInfoTplId] = React.useState<string | null>(null);
+
+  // Cierra el tooltip de descripción de plantilla al hacer clic fuera.
+  React.useEffect(() => {
+    if (!infoTplId) return;
+    const onDocClick = (e: MouseEvent) => {
+      const path = e.composedPath?.() ?? [];
+      const inside = path.some(
+        (n) => n instanceof HTMLElement && n.dataset?.tplInfo !== undefined,
+      );
+      if (!inside) setInfoTplId(null);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [infoTplId]);
   const [userMenuOpen, setUserMenuOpen] = React.useState(false);
   const [spaceDraft, setSpaceDraft] = React.useState("");
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
@@ -176,7 +196,6 @@ export function MatrixDashboard() {
   const [docsMetric, setDocsMetric] = React.useState<Metric | null>(null);
   const { activeMetrics: allMetrics } = useMetrics();
   const metricContext = useMetricContext();
-  const activeTemplates = metricContext.templates;
   const docsFilters = useMetricsFilters(allMetrics);
 
   React.useEffect(() => {
@@ -245,9 +264,12 @@ export function MatrixDashboard() {
 
   const onCreateBlank = async () => {
     if (!user) return;
-    const b = await createBoard(user.uid, "Matrix sin título", {
-      excludedMetricIds: allMetrics.map((m) => m.id),
-    });
+    const b = await createBoard(
+      user.uid,
+      "Matrix sin título",
+      { excludedMetricIds: allMetrics.map((m) => m.id) },
+      USER_CREATED_COVER,
+    );
     if (targetSpaceId) {
       await setBoardSpace(user.uid, b.id, targetSpaceId);
     }
@@ -260,7 +282,12 @@ export function MatrixDashboard() {
       template,
       allMetrics.map((m) => m.id),
     );
-    const board = await createBoard(user.uid, template.name, canvas);
+    const board = await createBoard(
+      user.uid,
+      template.name,
+      canvas,
+      template.cover,
+    );
     if (targetSpaceId) {
       await setBoardSpace(user.uid, board.id, targetSpaceId);
     }
@@ -314,6 +341,13 @@ export function MatrixDashboard() {
   };
 
   const moveBoard = boards.find((b) => b.id === moveBoardId) ?? null;
+  const coverBoard = boards.find((b) => b.id === coverBoardId) ?? null;
+
+  const onSelectCover = async (cover: string) => {
+    if (!user || !coverBoardId) return;
+    await updateBoardCover(user.uid, coverBoardId, cover);
+    setCoverBoardId(null);
+  };
 
   const onToggleStar = async (board: MatrixBoard) => {
     if (!user) return;
@@ -707,37 +741,70 @@ export function MatrixDashboard() {
             <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#757575]">
               Plantillas de inicio
             </h2>
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              <button
-                type="button"
-                onClick={onCreateBlank}
-                className="flex h-[140px] w-[160px] shrink-0 flex-col items-center justify-center rounded-lg border-2 border-dashed border-[#cfcfcf] bg-white text-[#757575] transition-[border-color,background-color,box-shadow,transform] duration-150 ease-out hover:translate-y-[-1px] hover:border-[#0d99ff]/50 hover:bg-[#f7f7f7] hover:shadow-[0_6px_18px_rgba(0,0,0,0.05)] active:translate-y-0"
-              >
-                <Plus className="mb-2 h-8 w-8" />
-                <span className="text-xs font-medium">Matrix en blanco</span>
-              </button>
-              {activeTemplates.map((template) => (
-                <button
-                  key={template.id}
-                  type="button"
-                  onClick={() => onTemplate(template)}
-                  className="flex h-[140px] w-[160px] shrink-0 flex-col overflow-hidden rounded-lg border border-[#e6e6e6] bg-white text-left shadow-sm transition-[box-shadow,transform,border-color] duration-150 ease-out hover:translate-y-[-1px] hover:border-[#d9d9d9] hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] active:translate-y-0"
-                >
-                  <BoardThumbnail
-                    color={template.accentColor ?? thumbColor(template.id)}
-                    className="aspect-[16/10] w-full"
-                  />
-                  <div className="flex flex-1 flex-col justify-center px-3.5">
-                    <span className="line-clamp-1 text-[12px] font-semibold leading-tight tracking-[-0.01em]">
-                      {template.name}
-                    </span>
-                    <span className="mt-1 flex items-center gap-1.5 text-[10px] leading-tight text-[#757575]">
-                      <Sparkles className="h-3 w-3 shrink-0 text-violet-500" />
-                      <span className="line-clamp-2">{template.purpose}</span>
-                    </span>
+            <div className="flex flex-wrap justify-center gap-2.5">
+              {metricContext.objectives.map((obj) => {
+                const template = metricContext.templates.find(
+                  (t) => t.id === obj.matrixTemplateId,
+                );
+                if (!template) return null;
+                const src = metricContext.covers.find(
+                  (c) => c.id === template.cover,
+                )?.src;
+                const infoOpen = infoTplId === obj.id;
+                return (
+                  <div key={obj.id} className="group relative h-[128px] w-[132px]">
+                    <button
+                      type="button"
+                      onClick={() => onTemplate(template)}
+                      className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-[#e6e6e6] bg-white text-left shadow-sm transition-[box-shadow,transform,border-color] duration-150 ease-out group-hover:translate-y-[-1px] group-hover:border-[#d9d9d9] group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] active:translate-y-0"
+                    >
+                      {src ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={src}
+                          alt=""
+                          className="aspect-[16/10] w-full bg-[#f3f3f3] object-cover"
+                        />
+                      ) : (
+                        <BoardThumbnail
+                          color={template.accentColor ?? thumbColor(template.id)}
+                          className="aspect-[16/10] w-full"
+                        />
+                      )}
+                      <div className="flex flex-1 items-center justify-center px-2 text-center">
+                        <span className="line-clamp-2 text-[11px] font-semibold leading-tight tracking-[-0.01em] text-[#1e1e1e]">
+                          {obj.label}
+                        </span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      data-tpl-info
+                      aria-label="Descripción de la plantilla"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setInfoTplId((prev) => (prev === obj.id ? null : obj.id));
+                      }}
+                      className={cn(
+                        "absolute right-1.5 top-1.5 rounded-md bg-white/90 p-1 shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-white hover:shadow-md hover:scale-[1.04] active:scale-[0.97]",
+                        infoOpen
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100",
+                      )}
+                    >
+                      <Info className="h-3.5 w-3.5 text-[#757575]" />
+                    </button>
+                    {infoOpen ? (
+                      <div
+                        data-tpl-info
+                        className="absolute right-1.5 top-8 z-20 w-[184px] rounded-lg border border-[#e6e6e6] bg-white p-2.5 text-[11px] leading-[1.45] text-[#444] shadow-lg"
+                      >
+                        {obj.description}
+                      </div>
+                    ) : null}
                   </div>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </section>
 
@@ -825,7 +892,7 @@ export function MatrixDashboard() {
                   >
                     {renamingId === b.id ? (
                       <div className="block">
-                        <BoardThumbnailPreview
+                        <BoardCover
                           board={b}
                           metrics={allMetrics}
                           fallbackColor={thumbColor(b.id)}
@@ -865,7 +932,7 @@ export function MatrixDashboard() {
                       </div>
                     ) : (
                       <Link href={`/board/${b.id}`} className="block">
-                        <BoardThumbnailPreview
+                        <BoardCover
                           board={b}
                           metrics={allMetrics}
                           fallbackColor={thumbColor(b.id)}
@@ -965,6 +1032,17 @@ export function MatrixDashboard() {
                         >
                           <FolderInput className="h-3.5 w-3.5" />
                           Mover a…
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]"
+                          onClick={() => {
+                            setCoverBoardId(b.id);
+                            setMenuId(null);
+                          }}
+                        >
+                          <ImageIcon className="h-3.5 w-3.5" />
+                          Cover
                         </button>
                         <button
                           type="button"
@@ -1079,6 +1157,17 @@ export function MatrixDashboard() {
                                 type="button"
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]"
                                 onClick={() => {
+                                  setCoverBoardId(b.id);
+                                  setMenuId(null);
+                                }}
+                              >
+                                <ImageIcon className="h-3.5 w-3.5" />
+                                Cover
+                              </button>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-[#f7f7f7]"
+                                onClick={() => {
                                   onToggleStar(b);
                                   setMenuId(null);
                                 }}
@@ -1169,6 +1258,14 @@ export function MatrixDashboard() {
           </div>
         </div>
       ) : null}
+
+      <CoverPickerModal
+        board={coverBoard}
+        metrics={allMetrics}
+        fallbackColor={coverBoard ? thumbColor(coverBoard.id) : "#e5e7eb"}
+        onSelect={onSelectCover}
+        onClose={() => setCoverBoardId(null)}
+      />
     </div>
   );
 }
