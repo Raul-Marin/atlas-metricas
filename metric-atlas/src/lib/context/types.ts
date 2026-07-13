@@ -79,6 +79,14 @@ export interface TemplateQuadrant {
   meaning: string;
 }
 
+/** Imagen de portada seleccionable para una plantilla / board. */
+export interface CoverDef {
+  id: string;
+  label: string;
+  /** Ruta pública de la imagen (p.ej. "/covers/adopcion-gobernanza.webp"). */
+  src: string;
+}
+
 /**
  * Plantilla = UNA matriz (un board) pre-montada, con las fichas ya aplicadas.
  * Al crear un board desde plantilla, el canvas se arma con:
@@ -104,6 +112,8 @@ export interface MatrixTemplateDef {
   includedMetricIds: string[];
   quadrantColors?: [string, string, string, string];
   accentColor?: string;
+  /** Id de la portada (imagen) de esta plantilla. */
+  cover?: string;
 }
 
 /**
@@ -135,5 +145,7 @@ export interface MetricContext {
   objectives: Objective[];
   /** Audiencias canónicas (lista controlada para el selector de audiencia). */
   audiences: DimensionValue[];
+  /** Portadas (imágenes) seleccionables para plantillas y boards. */
+  covers: CoverDef[];
   defaultAxes: { axisX: string; axisY: string };
 }
