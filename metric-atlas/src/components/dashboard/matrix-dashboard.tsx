@@ -741,7 +741,7 @@ export function MatrixDashboard() {
             <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#757575]">
               Plantillas de inicio
             </h2>
-            <div className="flex flex-wrap justify-center gap-3">
+            <div className="flex flex-wrap justify-center gap-2.5">
               {metricContext.objectives.map((obj) => {
                 const template = metricContext.templates.find(
                   (t) => t.id === obj.matrixTemplateId,
@@ -752,7 +752,7 @@ export function MatrixDashboard() {
                 )?.src;
                 const infoOpen = infoTplId === obj.id;
                 return (
-                  <div key={obj.id} className="relative h-[140px] w-[160px]">
+                  <div key={obj.id} className="group relative h-[128px] w-[132px]">
                     <button
                       type="button"
                       onClick={() => onTemplate(template)}
@@ -771,8 +771,8 @@ export function MatrixDashboard() {
                           className="aspect-[16/10] w-full"
                         />
                       )}
-                      <div className="flex flex-1 items-center px-3">
-                        <span className="line-clamp-2 text-[12px] font-semibold leading-tight tracking-[-0.01em] text-[#1e1e1e]">
+                      <div className="flex flex-1 items-center justify-center px-2 text-center">
+                        <span className="line-clamp-2 text-[11px] font-semibold leading-tight tracking-[-0.01em] text-[#1e1e1e]">
                           {obj.label}
                         </span>
                       </div>
@@ -785,9 +785,14 @@ export function MatrixDashboard() {
                         e.stopPropagation();
                         setInfoTplId((prev) => (prev === obj.id ? null : obj.id));
                       }}
-                      className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/85 text-[#626262] shadow-sm backdrop-blur transition-colors hover:bg-white hover:text-[#1e1e1e]"
+                      className={cn(
+                        "absolute right-1.5 top-1.5 rounded-md bg-white/90 p-1 shadow-sm transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-white hover:shadow-md hover:scale-[1.04] active:scale-[0.97]",
+                        infoOpen
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100",
+                      )}
                     >
-                      <Info className="h-3.5 w-3.5" />
+                      <Info className="h-3.5 w-3.5 text-[#757575]" />
                     </button>
                     {infoOpen ? (
                       <div
