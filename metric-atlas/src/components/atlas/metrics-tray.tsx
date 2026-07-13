@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Users } from "lucide-react";
+import { Check, Users } from "lucide-react";
 import type { Metric } from "@/lib/types";
 import { metricVizCategory, VIZ_LEGEND } from "@/lib/quadrant-viz";
 import { useMetricContext } from "@/lib/context/provider";
@@ -151,9 +151,11 @@ export function MetricsTray({
             >
               <Users className="h-4 w-4" />
               {audienceCount > 0 ? (
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#0d99ff] px-1 text-[9px] font-semibold leading-none text-white">
-                  {audienceCount}
-                </span>
+                <Check
+                  className="absolute right-[3px] top-[3px] h-2.5 w-2.5 text-[#0d99ff]"
+                  strokeWidth={3.5}
+                  aria-hidden
+                />
               ) : null}
             </button>
           ) : null}
