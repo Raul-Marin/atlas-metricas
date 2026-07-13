@@ -33,7 +33,10 @@ export function MetricsTray({
   variant?: "card" | "flat";
 }) {
   const [query, setQuery] = React.useState("");
+  const [objectiveId, setObjectiveId] = React.useState<string>("");
   const context = useMetricContext();
+  const objective =
+    context.objectives.find((o) => o.id === objectiveId) ?? null;
   const sectionRef = React.useRef<HTMLElement>(null);
   const [hover, setHover] = React.useState<{ metric: Metric; top: number } | null>(
     null,
@@ -56,15 +59,21 @@ export function MetricsTray({
   const canHover = !!onMetricPointerDown;
 
   // Biblioteca agrupada por las categorías del contexto (con contador).
+  // Si hay un objetivo seleccionado, solo se muestran sus categorías usables.
   const groups = React.useMemo(() => {
+    const allow = objective ? new Set(objective.categoryIds) : null;
     const known = new Set(context.categories.map((c) => c.id));
-    const byCat = context.categories.map((cat) => ({
-      cat,
-      items: filtered.filter((m) => m.attributes?.categoria === cat.id),
-    }));
-    const otros = filtered.filter(
-      (m) => !known.has(String(m.attributes?.categoria ?? "")),
-    );
+    const byCat = context.categories
+      .filter((cat) => !allow || allow.has(cat.id))
+      .map((cat) => ({
+        cat,
+        items: filtered.filter((m) => m.attributes?.categoria === cat.id),
+      }));
+    const otros = allow
+      ? []
+      : filtered.filter(
+          (m) => !known.has(String(m.attributes?.categoria ?? "")),
+        );
     if (otros.length) {
       byCat.push({
         cat: { id: "__otros", label: "Otras", color: "#9ca3af" },
@@ -72,7 +81,7 @@ export function MetricsTray({
       });
     }
     return byCat.filter((g) => g.items.length > 0);
-  }, [context.categories, filtered]);
+  }, [context.categories, filtered, objective]);
 
   const clearHover = React.useCallback(() => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
@@ -99,6 +108,25 @@ export function MetricsTray({
           : "rounded-lg border border-[#e6e6e6] bg-white p-3 shadow-sm",
       )}
     >
+      <div className="mb-2 shrink-0">
+        <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[#757575]">
+          Objetivo
+        </label>
+        <select
+          value={objectiveId}
+          onChange={(event) => setObjectiveId(event.target.value)}
+          title={objective?.description ?? "Filtra las fichas usables por objetivo"}
+          className="w-full rounded-md border border-[#e6e6e6] bg-white px-2.5 py-2 text-xs text-[#1e1e1e] outline-none focus:border-[#0d99ff]"
+        >
+          <option value="">Todos los objetivos</option>
+          {context.objectives.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="mb-3 shrink-0">
         <input
           value={query}
@@ -192,9 +220,9 @@ export function MetricsTray({
           </div>
         ))}
 
-        {filtered.length === 0 ? (
+        {groups.length === 0 ? (
           <p className="rounded-md border border-dashed border-[#d8d8d8] px-3 py-4 text-center text-[11px] text-[#757575]">
-            No hay métricas con esa búsqueda.
+            No hay métricas para este objetivo o búsqueda.
           </p>
         ) : null}
       </div>

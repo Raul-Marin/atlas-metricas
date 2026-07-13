@@ -106,6 +106,23 @@ export interface MatrixTemplateDef {
   accentColor?: string;
 }
 
+/**
+ * Objetivo ("¿Qué quieres demostrar?"): filtra las fichas usables y (a futuro)
+ * propone una matriz. Define el subconjunto de categorías relevantes; opcional-
+ * mente una lista explícita de métricas y la plantilla que propone.
+ */
+export interface Objective {
+  id: string;
+  label: string;
+  description?: string;
+  /** Categorías cuyas métricas son usables para este objetivo. */
+  categoryIds: string[];
+  /** Métricas concretas destacadas (opcional; se muestran primero / se permiten). */
+  metricIds?: string[];
+  /** Plantilla que propone este objetivo (para el futuro "propone una matriz"). */
+  matrixTemplateId?: string;
+}
+
 export interface MetricContext {
   id: string;
   name: string;
@@ -114,5 +131,7 @@ export interface MetricContext {
   categories: DimensionValue[];
   metrics: MetricDefinition[];
   templates: MatrixTemplateDef[];
+  /** Objetivos ("¿Qué quieres demostrar?") que filtran las fichas usables. */
+  objectives: Objective[];
   defaultAxes: { axisX: string; axisY: string };
 }
