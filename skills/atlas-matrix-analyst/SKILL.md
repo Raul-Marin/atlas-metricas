@@ -34,17 +34,22 @@ pídele que abra la matriz en Metric Atlas y use **Exportar → Exportar para IA
 
 ## Qué hacer
 
-0. **Pregunta primero (obligatorio).** En cuanto recibas el bloque, y **antes de
-   generar nada**, pregunta al usuario qué quiere. Ofrece exactamente estas dos
-   opciones:
+0. **Pregunta interactiva primero (obligatorio).** En cuanto recibas el bloque, y
+   **antes de generar nada**, usa tu **herramienta de pregunta interactiva con
+   opciones seleccionables** para que el usuario elija con un clic. **No lo
+   preguntes como texto libre en el chat.**
 
-   1. **Informe de análisis** — conclusiones de lo que muestra la matriz
-      (insight, qué significa, riesgos, acciones y narrativa).
-   2. **Presentación** — un *deck* que presenta la información y lo que muestra
-      la matriz.
+   - En Claude usa la herramienta **`AskUserQuestion`** (una pregunta, selección
+     simple) con estas dos opciones:
+     1. **Informe de análisis** — descripción: "Conclusiones de lo que muestra la
+        matriz: insight, qué significa, riesgos, acciones y narrativa."
+     2. **Presentación** — descripción: "Un deck que presenta la información y lo
+        que muestra la matriz."
+   - Si tu entorno **no** dispone de una herramienta de pregunta interactiva,
+     entonces (y solo entonces) pregúntalo en texto.
 
-   Espera su elección antes de continuar. (Si al pegar el bloque el usuario ya
-   ha dicho claramente cuál de las dos quiere, sáltate la pregunta y ve directo.)
+   Espera su elección antes de continuar. (Si al pegar el bloque el usuario ya ha
+   dicho claramente cuál de las dos quiere, sáltate la pregunta y ve directo.)
 
 1. **Parsea** el bloque: objetivo, audiencia, ejes/extremos, significado de
    cuadrantes y la lista de fichas con su cuadrante y ficha.
@@ -59,9 +64,10 @@ pídele que abra la matriz en Metric Atlas y use **Exportar → Exportar para IA
      conciso y accionable, con el **tono de la audiencia** (Leadership →
      impacto/negocio/decisión; DS Team/Engineering → deuda/priorización/
      instrumentación; Diseño/Producto → adopción/consistencia).
-   - **Presentación** → pregunta el **formato** (por defecto un *deck* HTML
-     autocontenido; también .pptx o slides Markdown si lo prefiere) y genera la
-     presentación siguiendo el guion de `references/interpretation.md`.
+   - **Presentación** → vuelve a usar la **pregunta interactiva** para el
+     **formato** (opciones: *Deck HTML* autocontenido —recomendado—; *PPTX*;
+     *Slides Markdown*) y genera la presentación siguiendo el guion de
+     `references/interpretation.md`.
 
 ## Reglas
 - **Básate solo en los datos del bloque.** No inventes métricas, cifras ni
