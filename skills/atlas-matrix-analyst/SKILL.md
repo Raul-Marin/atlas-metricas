@@ -1,10 +1,10 @@
 ---
 name: atlas-matrix-analyst
 description: >-
-  Analiza una matriz de Metric Atlas y produce hallazgos accionables (y, si el
-  usuario lo pide, una presentación). Úsala cuando el usuario pegue un export
-  "Exportar para IA" de Metric Atlas, comparta una matriz 2×2 de métricas de
-  Design Systems, o pida interpretar/comunicar los resultados de una matriz.
+  Analiza una matriz de Metric Atlas y produce hallazgos accionables (o una
+  presentación). Úsala cuando el usuario pegue un export "Exportar para IA" de
+  Metric Atlas, comparta una matriz 2×2 de métricas de Design Systems, o pida
+  interpretar/comunicar los resultados de una matriz. Autocontenida (un archivo).
 ---
 
 # Atlas Matrix Analyst
@@ -15,22 +15,56 @@ el usuario pega (generado con **Exportar para IA** en la app). En cuanto lo pega
 muestra la matriz) o una **presentación**. Según su elección, produces una u otra
 —en ambos casos adaptadas a su objetivo y audiencia.
 
+Esta Skill es **autocontenida**: todo lo que necesitas (formato del bloque,
+heurísticas y guion de presentación) está en este mismo archivo.
+
 ## Entrada
-El usuario pega un bloque **Markdown** con esta estructura (ver
-`references/bundle-format.md` para el detalle):
+El usuario pega un bloque **Markdown**. Si pega un enlace en vez del contenido, o
+el bloque está incompleto, pídele que abra la matriz en Metric Atlas y use
+**Exportar → Exportar para IA (copiar)** y pegue el resultado.
 
-- `# Matriz: <nombre>` y `Contexto/dominio`.
-- **Objetivo y audiencia**: qué quiere demostrar y a quién va dirigida.
-- **Ejes del 2×2**: eje X y eje Y con sus extremos (0 y 100).
-- **Significado de los cuadrantes**: título + significado de cada cuadrante
-  (arriba-izq/der, abajo-izq/der). Puede faltar si los ejes son personalizados.
-- **Fichas en la matriz**: por cada métrica → posición (valor 0–100 en cada eje)
-  y **cuadrante**, categoría, qué mide, por qué importa, esfuerzo, confianza,
-  cómo medirla, riesgos y "cruzar con".
+### Formato del paquete semántico
+Las secciones aparecen en este orden:
 
-Si el usuario pega un enlace en vez del contenido, o el bloque está incompleto,
-pídele que abra la matriz en Metric Atlas y use **Exportar → Exportar para IA
-(copiar)** y pegue el resultado.
+```markdown
+# Matriz: <nombre del board>
+
+Contexto/dominio: <p.ej. Design Systems>
+
+## Objetivo y audiencia
+- Objetivo: <label del objetivo> — <descripción>        (o "ninguno")
+- Audiencia: <lista de audiencias>                       (o "sin audiencia definida")
+
+## Ejes del 2×2
+- Eje X — <label>: "<extremo bajo>" (0) ↔ "<extremo alto>" (100)
+- Eje Y — <label>: "<extremo bajo>" (0, arriba) ↔ "<extremo alto>" (100, abajo)
+
+## Significado de los cuadrantes
+- arriba-izquierda — <título>: <significado>
+- arriba-derecha — <título>: <significado>
+- abajo-izquierda — <título>: <significado>
+- abajo-derecha — <título>: <significado>
+# (si los ejes son personalizados, esta sección dice que no hay significado de plantilla)
+
+## Fichas en la matriz (<n>)
+
+### <nombre de la métrica> · <categoría>
+- Posición: <eje X>=<0-100>, <eje Y>=<0-100> → cuadrante <posición> (<título del cuadrante>)
+- Qué mide: …
+- Por qué importa: …
+- Medición: esfuerzo <…> · confianza <…> · frecuencia <…>
+- Cómo medirla: …; …
+- Riesgos: …; …
+- Cruzar con: …; …
+```
+
+Cómo leer las posiciones:
+- **X**: 0 = extremo bajo (izquierda), 100 = extremo alto (derecha).
+- **Y**: 0 = extremo bajo (**arriba**), 100 = extremo alto (abajo).
+- El **cuadrante** ya viene resuelto en cada ficha (posición + título); úsalo tal
+  cual, no lo recalcules.
+- Solo aparecen las **fichas colocadas** (las excluidas no se exportan). Los
+  campos de ficha son opcionales. "Cruzar con" son **nombres** de métricas, no ids.
 
 ## Qué hacer
 
@@ -41,10 +75,10 @@ pídele que abra la matriz en Metric Atlas y use **Exportar → Exportar para IA
 
    - En Claude usa la herramienta **`AskUserQuestion`** (una pregunta, selección
      simple) con estas dos opciones:
-     1. **Informe de análisis** — descripción: "Conclusiones de lo que muestra la
-        matriz: insight, qué significa, riesgos, acciones y narrativa."
-     2. **Presentación** — descripción: "Un deck que presenta la información y lo
-        que muestra la matriz."
+     1. **Informe de análisis** — "Conclusiones de lo que muestra la matriz:
+        insight, qué significa, riesgos, acciones y narrativa."
+     2. **Presentación** — "Un deck que presenta la información y lo que muestra
+        la matriz."
    - Si tu entorno **no** dispone de una herramienta de pregunta interactiva,
      entonces (y solo entonces) pregúntalo en texto.
 
@@ -54,20 +88,15 @@ pídele que abra la matriz en Metric Atlas y use **Exportar → Exportar para IA
 1. **Parsea** el bloque: objetivo, audiencia, ejes/extremos, significado de
    cuadrantes y la lista de fichas con su cuadrante y ficha.
 2. **Analiza la distribución** por cuadrante y cruza con el **objetivo** y la
-   **audiencia**. Aplica las heurísticas de `references/interpretation.md`:
-   cuadrantes vacíos o saturados, posibles *vanity metrics*, clusters de alto
-   impacto/prioridad, métricas que no encajan con el objetivo, categorías no
-   representadas, y relaciones "cruzar con". (Este análisis alimenta ambas
-   salidas.)
+   **audiencia**, aplicando las "Heurísticas de interpretación" de más abajo.
+   (Este análisis alimenta ambas salidas.)
 3. **Según la elección del paso 0:**
    - **Informe de análisis** → redacta el informe de hallazgos (formato abajo),
-     conciso y accionable, con el **tono de la audiencia** (Leadership →
-     impacto/negocio/decisión; DS Team/Engineering → deuda/priorización/
-     instrumentación; Diseño/Producto → adopción/consistencia).
+     conciso y accionable, con el **tono de la audiencia**.
    - **Presentación** → vuelve a usar la **pregunta interactiva** para el
      **formato** (opciones: *Deck HTML* autocontenido —recomendado—; *PPTX*;
-     *Slides Markdown*) y genera la presentación siguiendo el guion de
-     `references/interpretation.md`.
+     *Slides Markdown*) y genera la presentación siguiendo el "Guion de la
+     presentación" de más abajo.
 
 ## Reglas
 - **Básate solo en los datos del bloque.** No inventes métricas, cifras ni
@@ -100,5 +129,56 @@ Métricas mal ubicadas, cuadrantes saturados, señales poco accionables.
 Cómo comunicarlo a esa audiencia en 2–3 frases.
 ```
 
-Consulta `references/interpretation.md` para las heurísticas de interpretación y
-el guion de la presentación.
+## Heurísticas de interpretación
+
+Principios:
+- El **objetivo** dice qué hay que demostrar; ordena los hallazgos hacia él.
+- La **audiencia** dicta el tono y qué destacar (ver "Audiencias").
+- El **significado de cada cuadrante** (del bloque) es la clave para interpretar
+  dónde cae cada métrica. Léelo antes de opinar.
+
+Patrones a detectar:
+1. **Cuadrante saturado**: muchas fichas en un cuadrante → concentración de
+   esfuerzo/atención ahí; ¿es lo que el objetivo quiere?
+2. **Cuadrante vacío**: ninguna ficha → punto ciego o área sin medir (a menudo el
+   hallazgo más importante).
+3. **Vanity metrics**: métricas en cuadrantes tipo "bajo valor / fácil de medir",
+   "evidencia débil" o "actividad sin acción". Señálalas para descartar o mover.
+4. **Prioridad clara**: fichas en "alto impacto + alta urgencia" / "empezar aquí"
+   / "métricas para leadership" → candidatas a first set / narrativa principal.
+5. **Alto valor difícil de medir**: necesitan narrativa o investigación, no
+   dashboard. Recoméndalo explícitamente.
+6. **Contradicciones con el objetivo**: métricas cuya posición no ayuda al
+   objetivo declarado → riesgo de no poder demostrar lo que se busca.
+7. **Cobertura por categoría**: si el objetivo abarca varias categorías y solo
+   una está representada, señala la falta.
+8. **Relaciones "cruzar con"**: si dos métricas que deberían cruzarse están en
+   cuadrantes opuestos, coméntalo (p.ej. mucho uso + muchos overrides).
+
+## Audiencias (tono y foco)
+- **Leadership / Producto / Negocio**: impacto, ROI, decisión, riesgo a futuro.
+  Pocas métricas, la narrativa por delante. Evita jerga.
+- **DS Team / Engineering**: deuda, priorización, instrumentación, qué medir
+  primero, guardrails. Se puede entrar al detalle.
+- **Diseño**: adopción, consistencia, fricción, calidad percibida.
+- **Ops**: mantenimiento, backlog, resolución.
+- **Todas / mixta**: dos niveles — titular para leadership + detalle para el equipo.
+
+## Guion de la presentación
+
+Por defecto un **deck HTML autocontenido** (una sola página, navegable o con
+secciones). Si el usuario prefiere .pptx o slides Markdown (Marp/reveal), adapta
+el mismo contenido. Slides sugeridas:
+
+1. **Portada**: nombre de la matriz · objetivo · audiencia.
+2. **La matriz de un vistazo**: los dos ejes y qué significa cada cuadrante.
+3. **Dónde estamos**: distribución de las fichas por cuadrante (resumen).
+4. **Insight clave**: la conclusión principal (1 frase grande).
+5. **Qué significa**: 2–4 lecturas por cuadrante, con las métricas concretas.
+6. **Riesgos / vanity metrics**: qué descartar o mover.
+7. **Acciones recomendadas**: priorizadas, atribuidas a métricas/cuadrantes.
+8. **Cierre / narrativa para la audiencia**: cómo comunicarlo.
+
+Reglas del deck: sobrio y legible, un mensaje por slide, cita métricas reales del
+bloque, sin inventar cifras. Colorea con moderación (los cuadrantes pueden guiar
+el color). Entrega el archivo listo para abrir/compartir.
