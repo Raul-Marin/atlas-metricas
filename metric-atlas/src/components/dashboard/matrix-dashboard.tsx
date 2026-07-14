@@ -276,12 +276,12 @@ export function MatrixDashboard() {
     goBoard(b.id);
   };
 
-  const onTemplate = async (template: MatrixTemplateDef) => {
+  const onTemplate = async (template: MatrixTemplateDef, objectiveId?: string) => {
     if (!user) return;
-    const canvas = templateDefToCanvas(
-      template,
-      allMetrics.map((m) => m.id),
-    );
+    const canvas = {
+      ...templateDefToCanvas(template, allMetrics.map((m) => m.id)),
+      ...(objectiveId ? { objective: objectiveId } : {}),
+    };
     const board = await createBoard(
       user.uid,
       template.name,
@@ -755,7 +755,7 @@ export function MatrixDashboard() {
                   <div key={obj.id} className="group relative h-[128px] w-[132px]">
                     <button
                       type="button"
-                      onClick={() => onTemplate(template)}
+                      onClick={() => onTemplate(template, obj.id)}
                       className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-[#e6e6e6] bg-white text-left shadow-sm transition-[box-shadow,transform,border-color] duration-150 ease-out group-hover:translate-y-[-1px] group-hover:border-[#d9d9d9] group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] active:translate-y-0"
                     >
                       {src ? (
